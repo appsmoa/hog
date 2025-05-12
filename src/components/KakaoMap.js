@@ -197,7 +197,7 @@ const KakaoMap = ({ address }) => {
         </Layer>
       )}
       {results.length > 0 && (
-        <h3>검색 결과 총 {results.length} 건</h3>
+        <h3>검 색 결 과 총 {results.length} 건</h3>
       )}
       <ResultList>
         {results.map((item, index) => (

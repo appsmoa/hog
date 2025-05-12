@@ -10,7 +10,7 @@ app.get('/api/apartments/:id', async (req, res) => {
 
 // 실거래가 정보 API
 app.get('/api/apartments/:id/transactions', async (req, res) => {
-  // 실거래 정보 조회 로직
+  // 실거래 정보 조회 로 직
 });
 
 // 시세 정보 API
