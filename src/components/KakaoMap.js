@@ -92,6 +92,7 @@ const KakaoMap = ({ address }) => {
       }
 
       if (!address || address.trim() === '') {
+        if (results.length === 0) return; // 처음 렌더링 시 레이어 표시 방지
         setLayerMessage('검색어를 입력해주세요.'); // 레이어 메시지 설정
         setShowLayer(true); // 레이어 표시
         return; // 검색어가 없으면 초기화 중단
@@ -125,7 +126,7 @@ const KakaoMap = ({ address }) => {
       setLayerMessage('지도 초기화 중 오류가 발생했습니다.');
       setShowLayer(true); // 레이어 표시
     }
-  }, [address]);
+  }, [address, results.length]);
 
   useEffect(() => {
     const loadKakaoMap = () => {
@@ -197,11 +198,10 @@ const KakaoMap = ({ address }) => {
         </Layer>
       )}
       {results.length > 0 && (
-        <h3>검색 결과 총 {results.length} 건</h3>
+        <h3>검색결과 총 {results.length} 건</h3>
       )}
       <ResultList>
         {results.map((item, index) => (
-   
           <ResultItem key={index} onClick={() => handleResultClick(item)}>
             {item.place_name} ({item.address_name})
           </ResultItem>
