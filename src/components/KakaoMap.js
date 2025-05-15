@@ -112,18 +112,18 @@ const KakaoMap = ({ address }) => {
           mapInstance.current.setCenter(coords);
           setShowLayer(false); // 검색 성공 시 레이어 숨기기
         } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
-          console.error(`검색 결과가 없습니다: ${address}`);
-          setLayerMessage(`검색 결과가 없습니다: "${address}"`);
+          console.error(`검색 결과가 없습 니다: ${address}`);
+          setLayerMessage(`검색 결과가 없습 니다: "${address}"`);
           setShowLayer(true); // 레이어 표시
         } else {
           console.error('키워드 검색 중 오류 발생:', status);
-          setLayerMessage('키워드 검색 중 오류가 발생했습니다.');
+          setLayerMessage('키워드 검색 중 오류가 발생했습 니다.');
           setShowLayer(true); // 레이어 표시
         }
       });
     } catch (err) {
       console.error('지도 초기화 중 오류 발생:', err);
-      setLayerMessage('지도 초기화 중 오류가 발생했습니다.');
+      setLayerMessage('지도 초기화 중 오류가 발생했습 니다.');
       setShowLayer(true); // 레이어 표시
     }
   }, [address, results.length]);
