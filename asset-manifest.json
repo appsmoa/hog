@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/hog/static/js/main.c5bc8499.js",
+    "main.js": "/hog/static/js/main.e79a825f.js",
     "index.html": "/hog/index.html",
-    "main.c5bc8499.js.map": "/hog/static/js/main.c5bc8499.js.map"
+    "main.e79a825f.js.map": "/hog/static/js/main.e79a825f.js.map"
   },
   "entrypoints": [
-    "static/js/main.c5bc8499.js"
+    "static/js/main.e79a825f.js"
   ]
 }
