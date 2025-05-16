@@ -75,6 +75,8 @@ const KakaoMap = ({ address }) => {
   const [results, setResults] = useState([]);
   const [showLayer, setShowLayer] = useState(false); // 레이어 표시 여부 상태
   const [layerMessage, setLayerMessage] = useState(''); // 레이어 메시지 상태
+  const [marker, setMarker] = useState(null); // 마커 상태 추가
+  const [selectedIndex, setSelectedIndex] = useState(null); // 추가
   const navigate = useNavigate(); // useNavigate 훅 초기화
 
   const initMap = useCallback(() => {
@@ -105,10 +107,19 @@ const KakaoMap = ({ address }) => {
         if (status === window.kakao.maps.services.Status.OK) {
           setResults(result);
           const coords = new window.kakao.maps.LatLng(result[0].y, result[0].x);
-          new window.kakao.maps.Marker({
+
+          // 기존 마커가 있으면 제거
+          if (marker) {
+            marker.setMap(null);
+          }
+
+          // 첫 검색 결과에 마커 표시
+          const newMarker = new window.kakao.maps.Marker({
             map: mapInstance.current,
             position: coords,
           });
+          setMarker(newMarker);
+
           mapInstance.current.setCenter(coords);
           setShowLayer(false); // 검색 성공 시 레이어 숨기기
         } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
@@ -126,42 +137,55 @@ const KakaoMap = ({ address }) => {
       setLayerMessage('지도 초기화 중 오류가 발생했습 니다.');
       setShowLayer(true); // 레이어 표시
     }
-  }, [address, results.length]);
+  }, [address, results.length]); // marker 제거!
 
   useEffect(() => {
-    const loadKakaoMap = () => {
-      if (window.kakao?.maps) {
-        window.kakao.maps.load(() => {
-          initMap();
-        });
-      } else if (!document.querySelector('script[src*="dapi.kakao.com"]')) {
-        const script = document.createElement('script');
-        script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.REACT_APP_KAKAO_MAP_API_KEY}&libraries=services&autoload=false`;
-        script.onload = () => {
-          console.log('카카오맵 스크립트 로드 완료');
+      const loadKakaoMap = () => {
+        if (window.kakao?.maps) {
           window.kakao.maps.load(() => {
             initMap();
           });
-        };
-        script.onerror = () => {
+        } else if (!document.querySelector('script[src*="dapi.kakao.com"]')) {
+          const script = document.createElement('script');
+          script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.REACT_APP_KAKAO_MAP_API_KEY}&libraries=services&autoload=false`;
+          script.onload = () => {
+          console.log('카카오맵 스크립트 로드 완료');
+            window.kakao.maps.load(() => {
+              initMap();
+            });
+          };
+          script.onerror = () => {
           console.error('카카오맵 스크립트 로드 실패');
-          setLayerMessage('카카오맵 스크립트를 로드할 수 없습니다.');
+            setLayerMessage('카카오맵 스크립트를 로드할 수 없습니다.');
           setShowLayer(true); // 레이어 표시
-        };
-        document.head.appendChild(script);
-      }
-    };
+          };
+          document.head.appendChild(script);
+        }
+      };
 
-    loadKakaoMap();
+      loadKakaoMap();
   }, [initMap]);
 
-  const handleResultClick = (item) => {
+  const handleResultClick = (item, index) => {
     const coords = new window.kakao.maps.LatLng(item.y, item.x);
-    mapInstance.current.setCenter(coords);
-    new window.kakao.maps.Marker({
+
+    // 기존 마커가 있으면 제거
+    if (marker) {
+      marker.setMap(null);
+    }
+
+    // 새 마커 생성 및 지도에 표시
+    const newMarker = new window.kakao.maps.Marker({
       map: mapInstance.current,
       position: coords,
     });
+    setMarker(newMarker);
+
+    // 지도 중심 이동
+    mapInstance.current.setCenter(coords);
+
+    // 선택된 인덱스 저장
+    setSelectedIndex(index);
   };
 
   const closeLayer = () => {
@@ -188,7 +212,6 @@ const KakaoMap = ({ address }) => {
 
   return (
     <>
-      <MapContainer ref={mapRef} />
       {showLayer && (
         <Layer>
           <LayerContent>
@@ -197,16 +220,21 @@ const KakaoMap = ({ address }) => {
           </LayerContent>
         </Layer>
       )}
+      <MapContainer ref={mapRef} />
       {results.length > 0 && (
         <h3>검색결과 총 {results.length} 건</h3>
       )}
       <ResultList>
         {results.map((item, index) => (
-          <ResultItem key={index} onClick={() => handleResultClick(item)}>
-            {item.place_name} ({item.address_name})
-          </ResultItem>
+          <React.Fragment key={index}>
+            <ResultItem onClick={() => handleResultClick(item, index)}>
+              {item.place_name} ({item.address_name})
+            </ResultItem>
+          </React.Fragment>
         ))}
       </ResultList>
+      
+      
     </>
   );
 };

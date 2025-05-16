@@ -38,7 +38,7 @@ const Home = () => {
             sx={{ mb: 2 }}
           />
           <Button variant="contained" color="primary" type="submit">
-            검 색
+            검색
           </Button>
         </form>
       </SearchContainer>
