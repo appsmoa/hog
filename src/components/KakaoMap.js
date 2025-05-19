@@ -199,26 +199,60 @@ const KakaoMap = () => {
                       <td style="padding:4px 0; word-break:break-all; max-width:220px;">${displayAddr}</td>
                     </tr>
                     <tr>
-                      <td colspan="2" align="center">
-                      <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" target="_blank">NAVER부동산</a>
-                      <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" target="_blank">KB부동산</a>
+                      <td colspan="2" align="center" style="padding-top:8px;">
+                        <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" 
+                           target="_blank" 
+                           class="naver-link"
+                           style="display:inline-block;padding:6px 18px;margin-right:12px;border-radius:6px;border:2px solid #03C75A;background:#fff;font-weight:bold;color:#03C75A;text-decoration:none;transition:box-shadow 0.2s;">
+                          NAVER부동산
+                        </a>
+                        <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" 
+                           target="_blank" 
+                           class="kb-link"
+                           style="display:inline-block;padding:6px 18px;border-radius:6px;border:2px solid #FFCC00;background:#fff;font-weight:bold;color:#FFCC00;text-decoration:none;">
+                          KB부동산
+                        </a>
                       </td>
                     </tr>
-                    37.51772445,126.932736,17
                   </tbody>
                 </table>
                 <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:18px;cursor:pointer;color:#007bff;">×</button>
+                <style>
+                  .naver-link:hover, .kb-link:hover {
+                    text-decoration: underline;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+                  }
+                  .naver-link, .naver-link:hover {
+                    color: #03C75A !important;
+                    border-color: #03C75A !important;
+                    background: #fff !important;
+                  }
+                  .kb-link, .kb-link:hover {
+                    color: #FFCC00 !important;
+                    border-color: #FFCC00 !important;
+                    background: #fff !important;
+                  }
+                </style>
               </div>
             `;
             const overlay = new window.kakao.maps.CustomOverlay({
               position,
               content: infoContent,
-              yAnchor: -0.2, // 마커 아래로 충분히 내림
+              yAnchor: -0.2,
               zIndex: 20,
             });
             overlay.setMap(mapInstance.current);
             setInfoOverlay(overlay);
             infoOverlayRef.current = overlay;
+
+            // 오버레이 생성 직후에만 등록!
+            window.closeAptInfoOverlay = () => {
+              if (infoOverlayRef.current) {
+                infoOverlayRef.current.setMap(null);
+                setInfoOverlay(null);
+                infoOverlayRef.current = null;
+              }
+            };
           } catch (e) {
             // 에러시 기존 오버레이 제거
             if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
@@ -331,6 +365,7 @@ const KakaoMap = () => {
       }
     };
   }, [showLayer]);
+
 
   return (
     <>
