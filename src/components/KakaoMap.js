@@ -8,6 +8,13 @@ const Layout = styled.div`
   width: 100%;
   min-height: 500px;
   gap: 24px;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
+    height: 100vh;
+  }
 `;
 
 const LeftPanel = styled.div`
@@ -19,7 +26,17 @@ const LeftPanel = styled.div`
   display: flex;
   flex-direction: column;
   min-width: 260px;
-  height: 100vh; /* 높이 고정 */
+  height: 100vh;
+
+  @media (max-width: 768px) {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    border-radius: 0 0 8px 8px;
+    box-shadow: none;
+    padding: 16px 8px;
+  }
 `;
 
 const SearchRow = styled.div`
@@ -53,10 +70,17 @@ const SearchButton = styled.button`
 
 const MapContainer = styled.div`
   flex: 1 1 0;
-  height: 100vh; /* 화면 전체 높이 */
+  height: 100vh;
   border-radius: 8px;
   overflow: hidden;
   background-color: hsl(99, 100.00%, 97.30%);
+
+  @media (max-width: 768px) {
+    width: 100%;
+    height: 400px;
+    min-height: 300px;
+    border-radius: 8px 8px 0 0;
+  }
 `;
 
 const ResultList = styled.ul`
@@ -142,7 +166,7 @@ const KakaoMap = () => {
     // 지도 인스턴스 생성 (최초 1회)
     if (!mapInstance.current) {
       const options = {
-        center: new window.kakao.maps.LatLng(37.566826, 126.9786567),
+        center: new window.kakao.maps.LatLng(37.5988459,127.0136836),
         level: 3,
       };
       mapInstance.current = new window.kakao.maps.Map(mapRef.current, options);
@@ -150,6 +174,9 @@ const KakaoMap = () => {
       // 아파트 마커/오버레이 최초 1회만 생성
       apartments.forEach(apart => {
         const position = new window.kakao.maps.LatLng(apart.lat, apart.lng);
+
+        // 툴팁 오버레이 변수
+        let tooltipOverlay = null;
 
         // 1. window에 콜백 등록
         window[`showAptInfo_${apart.aptcd}`] = async () => {
@@ -262,8 +289,60 @@ const KakaoMap = () => {
           }
         };
 
-        // 2. content에 onClick 등록
-        const overlayContent = `<div class="apartment-overlay" style="background:rgba(255,255,255,0.9);border:1px solid #888;border-radius:4px;padding:2px 6px;font-size:13px;color:#222;white-space:nowrap;margin-top:3px;box-shadow:0 1px 4px rgba(0,0,0,0.08);cursor:pointer;" onclick="window.showAptInfo_${apart.aptcd}()"><span style="font-weight:bold">${apart.name}</span></div>`;
+        // 2. content에 onClick, onMouseOver, onMouseOut 등록
+        const overlayContent = document.createElement('div');
+        overlayContent.className = 'apartment-overlay';
+        overlayContent.style.cssText = 'background:rgba(255,255,255,0.9);border:1px solid #888;border-radius:4px;padding:2px 6px;font-size:13px;color:#222;white-space:nowrap;margin-top:3px;box-shadow:0 1px 4px rgba(0,0,0,0.08);cursor:pointer;';
+        overlayContent.innerHTML = `<span style="font-weight:bold">${apart.name}</span>`;
+
+        // 마우스 오버시 툴팁 표시
+        overlayContent.onmouseover = async (e) => {
+          // 이미 툴팁이 있으면 제거
+          if (tooltipOverlay) tooltipOverlay.setMap(null);
+
+          // 주소와 세대수 가져오기 (apart에 이미 있으면 바로 사용, 없으면 fetch)
+          let address = apart.address;
+          let tnohsh = apart.tnohsh;
+          if (!address || !tnohsh) {
+            try {
+              const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+              if (!res.ok) throw new Error();
+              const data = await res.json();
+              const item = data.response?.body?.item;
+              address = item?.kaptAddr || '';
+              tnohsh = item?.kaptdaCnt || '';
+            } catch {
+              address = '(정보 없음)';
+              tnohsh = '-';
+            }
+          }
+
+          // 툴팁 오버레이 생성
+          const tooltipContent = `
+            <div style="background:#91bff2;color:#fff;padding:8px 14px;border-radius:7px;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;">
+              ${address}<br/>
+              세대수 : ${tnohsh}
+            </div>
+          `;
+          tooltipOverlay = new window.kakao.maps.CustomOverlay({
+            position,
+            content: tooltipContent,
+            yAnchor: 1.2,
+            zIndex: 30,
+          });
+          tooltipOverlay.setMap(mapInstance.current);
+        };
+
+        // 마우스 아웃시 툴팁 제거
+        overlayContent.onmouseout = () => {
+          if (tooltipOverlay) {
+            tooltipOverlay.setMap(null);
+            tooltipOverlay = null;
+          }
+        };
+
+        // 클릭 시 상세 정보
+        overlayContent.onclick = () => window[`showAptInfo_${apart.aptcd}`]();
 
         const overlay = new window.kakao.maps.CustomOverlay({
           position,
