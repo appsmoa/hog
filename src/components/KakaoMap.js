@@ -1,19 +1,70 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import styled from 'styled-components';
-import { useNavigate } from 'react-router-dom'; // React Router의 useNavigate 훅 가져오기
+import { useNavigate } from 'react-router-dom';
+import { apartments } from '../data/apartments';
+
+const Layout = styled.div`
+  display: flex;
+  width: 100%;
+  min-height: 500px;
+  gap: 24px;
+`;
+
+const LeftPanel = styled.div`
+  flex: 0 0 320px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 24px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  display: flex;
+  flex-direction: column;
+  min-width: 260px;
+  height: 100vh; /* 높이 고정 */
+`;
+
+const SearchRow = styled.div`
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+`;
+
+const SearchInput = styled.input`
+  flex: 1 1 0;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+  font-size: 16px;
+  min-width: 0;
+`;
+
+const SearchButton = styled.button`
+  padding: 0 18px;
+  border-radius: 5px;
+  border: none;
+  background: #007bff;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  &:hover {
+    background: #0056b3;
+  }
+`;
 
 const MapContainer = styled.div`
-  width: 100%;
-  height: 400px;
+  flex: 1 1 0;
+  height: 100vh; /* 화면 전체 높이 */
   border-radius: 8px;
   overflow: hidden;
   background-color: hsl(99, 100.00%, 97.30%);
 `;
 
 const ResultList = styled.ul`
-  margin-top: 20px;
+  margin-top: 10px;
   padding: 0;
   list-style: none;
+  flex: 1 1 0;
+  overflow-y: auto;
 `;
 
 const ResultItem = styled.li`
@@ -21,11 +72,12 @@ const ResultItem = styled.li`
   border: 1px solid #ddd;
   border-radius: 5px;
   margin-bottom: 10px;
-  background-color: #f9f9f9;
+  background-color: #fff;
   cursor: pointer;
+  font-size: 15px;
 
   &:hover {
-    background-color: #f1f1f1;
+    background-color: #e6f0ff;
   }
 `;
 
@@ -69,133 +121,203 @@ const LayerContent = styled.div`
   }
 `;
 
-const KakaoMap = ({ address }) => {
+const KakaoMap = () => {
+  const [address, setAddress] = useState('');
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const [results, setResults] = useState([]);
-  const [showLayer, setShowLayer] = useState(false); // 레이어 표시 여부 상태
-  const [layerMessage, setLayerMessage] = useState(''); // 레이어 메시지 상태
-  const [marker, setMarker] = useState(null); // 마커 상태 추가
-  const [selectedIndex, setSelectedIndex] = useState(null); // 추가
-  const navigate = useNavigate(); // useNavigate 훅 초기화
+  const [showLayer, setShowLayer] = useState(false);
+  const [layerMessage, setLayerMessage] = useState('');
+  const apartmentMarkers = useRef([]);
+  const apartmentOverlays = useRef([]);
+  const [searchMarkers, setSearchMarkers] = useState([]);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [infoOverlay, setInfoOverlay] = useState(null);
+  const infoOverlayRef = useRef(null);
+  const navigate = useNavigate();
 
   const initMap = useCallback(() => {
-    try {
-      if (!mapRef.current || !window.kakao?.maps) {
-        throw new Error('카카오맵을 로드할 수 없습니다.');
-      }
+    if (!mapRef.current || !window.kakao?.maps) return;
 
-      if (!mapInstance.current) {
-        const options = {
-          center: new window.kakao.maps.LatLng(37.566826, 126.9786567), // 서울 기본 위치
-          level: 3,
+    // 지도 인스턴스 생성 (최초 1회)
+    if (!mapInstance.current) {
+      const options = {
+        center: new window.kakao.maps.LatLng(37.566826, 126.9786567),
+        level: 3,
+      };
+      mapInstance.current = new window.kakao.maps.Map(mapRef.current, options);
+
+      // 아파트 마커/오버레이 최초 1회만 생성
+      apartments.forEach(apart => {
+        const position = new window.kakao.maps.LatLng(apart.lat, apart.lng);
+
+        // 1. window에 콜백 등록
+        window[`showAptInfo_${apart.aptcd}`] = async () => {
+          try {
+            const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+            if (!res.ok) throw new Error('정보를 불러올 수 없습니다.');
+            const data = await res.json();
+            const item = data.response?.body?.item;
+            if (!item) throw new Error('정보 없음');
+
+            // 준공일자 yyyy.MM.DD 형식 변환
+            let usedate = item.kaptUsedate;
+            let usedateStr = '';
+            if (usedate && usedate.length === 8) {
+              usedateStr = `${usedate.slice(0,4)}.${usedate.slice(4,6)}.${usedate.slice(6,8)}`;
+            }
+
+            // 주소에서 아파트명 제거
+            let displayAddr = item.kaptAddr;
+            if (item.kaptAddr && item.kaptName && item.kaptAddr.includes(item.kaptName)) {
+              displayAddr = item.kaptAddr.replace(item.kaptName, '').replace(/\s+/g, ' ').trim();
+            }
+
+            // 기존 정보창 오버레이 제거
+            if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
+
+            // 정보창 오버레이 생성
+            const infoContent = `
+              <div class="apt-info-overlay" style="background:#fff;border:1px solid #007bff;border-radius:8px;padding:16px;min-width:240px;box-shadow:0 4px 12px rgba(0,0,0,0.15);font-size:15px;position:relative;">
+                <div style="font-size:18px;font-weight:bold;margin-bottom:8px;color:#007bff;">${item.kaptName}</div>
+                <table style="width:100%;border-collapse:collapse;">
+                  <tbody>
+                    <tr>
+                      <th style="text-align:left;padding:4px 8px 4px 0;color:#007bff;">세대수</th>
+                      <td style="padding:4px 0;">${item.kaptdaCnt}</td>
+                    </tr>
+                    <tr>
+                      <th style="text-align:left;padding:4px 8px 4px 0;color:#007bff;">준공일자</th>
+                      <td style="padding:4px 0;">${usedateStr || '-'}</td>
+                    </tr>
+                    <tr>
+                      <th style="text-align:left;padding:4px 8px 4px 0;color:#007bff;">건설사</th>
+                      <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
+                    </tr>
+                    <tr>
+                      <th style="text-align:left;padding:4px 8px 4px 0;color:#007bff;">주소</th>
+                      <td style="padding:4px 0; word-break:break-all; max-width:220px;">${displayAddr}</td>
+                    </tr>
+                    <tr>
+                      <td colspan="2" align="center">
+                      <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" target="_blank">NAVER부동산</a>
+                      <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" target="_blank">KB부동산</a>
+                      </td>
+                    </tr>
+                    37.51772445,126.932736,17
+                  </tbody>
+                </table>
+                <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:18px;cursor:pointer;color:#007bff;">×</button>
+              </div>
+            `;
+            const overlay = new window.kakao.maps.CustomOverlay({
+              position,
+              content: infoContent,
+              yAnchor: -0.2, // 마커 아래로 충분히 내림
+              zIndex: 20,
+            });
+            overlay.setMap(mapInstance.current);
+            setInfoOverlay(overlay);
+            infoOverlayRef.current = overlay;
+          } catch (e) {
+            // 에러시 기존 오버레이 제거
+            if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
+            setInfoOverlay(null);
+            infoOverlayRef.current = null;
+            alert('정보를 불러올 수 없습니다.');
+          }
         };
-        mapInstance.current = new window.kakao.maps.Map(mapRef.current, options);
-      }
 
-      if (!address || address.trim() === '') {
-        if (results.length === 0) return; // 처음 렌더링 시 레이어 표시 방지
-        setLayerMessage('검색어를 입력해주세요.'); // 레이어 메시지 설정
-        setShowLayer(true); // 레이어 표시
-        return; // 검색어가 없으면 초기화 중단
-      }
+        // 2. content에 onClick 등록
+        const overlayContent = `<div class="apartment-overlay" style="background:rgba(255,255,255,0.9);border:1px solid #888;border-radius:4px;padding:2px 6px;font-size:13px;color:#222;white-space:nowrap;margin-top:3px;box-shadow:0 1px 4px rgba(0,0,0,0.08);cursor:pointer;" onclick="window.showAptInfo_${apart.aptcd}()"><span style="font-weight:bold">${apart.name}</span></div>`;
 
+        const overlay = new window.kakao.maps.CustomOverlay({
+          position,
+          content: overlayContent,
+          yAnchor: 0,
+        });
+        overlay.setMap(mapInstance.current);
+        apartmentOverlays.current.push(overlay);
+      });
+    }
+
+    // 기존 검색 마커 제거
+    searchMarkers.forEach(marker => marker.setMap(null));
+    setSearchMarkers([]);
+
+    // 검색어가 있으면 검색 마커 추가
+    if (address && address.trim() !== '') {
       const places = new window.kakao.maps.services.Places();
-      console.log('검색어:', address);
-
       places.keywordSearch(address, (result, status) => {
         if (status === window.kakao.maps.services.Status.OK) {
           setResults(result);
           const coords = new window.kakao.maps.LatLng(result[0].y, result[0].x);
 
-          // 기존 마커가 있으면 제거
-          if (marker) {
-            marker.setMap(null);
-          }
-
-          // 첫 검색 결과에 마커 표시
           const newMarker = new window.kakao.maps.Marker({
             map: mapInstance.current,
             position: coords,
           });
-          setMarker(newMarker);
-
+          setSearchMarkers([newMarker]);
           mapInstance.current.setCenter(coords);
-          setShowLayer(false); // 검색 성공 시 레이어 숨기기
+          setShowLayer(false);
         } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
-          console.error(`검색 결과가 없습 니다: ${address}`);
-          setLayerMessage(`검색 결과가 없습 니다: "${address}"`);
-          setShowLayer(true); // 레이어 표시
+          setLayerMessage(`검색 결과가 없습니다: "${address}"`);
+          setShowLayer(true);
         } else {
-          console.error('키워드 검색 중 오류 발생:', status);
-          setLayerMessage('키워드 검색 중 오류가 발생했습 니다.');
-          setShowLayer(true); // 레이어 표시
+          setLayerMessage('키워드 검색 중 오류가 발생했습니다.');
+          setShowLayer(true);
         }
       });
-    } catch (err) {
-      console.error('지도 초기화 중 오류 발생:', err);
-      setLayerMessage('지도 초기화 중 오류가 발생했습 니다.');
-      setShowLayer(true); // 레이어 표시
     }
-  }, [address, results.length]); // marker 제거!
+  }, [address, searchMarkers]);
 
   useEffect(() => {
-      const loadKakaoMap = () => {
-        if (window.kakao?.maps) {
+    console.log('카카오맵 useEffect 실행');
+    const loadKakaoMap = () => {
+      if (window.kakao?.maps) {
+        window.kakao.maps.load(() => {
+          initMap();
+        });
+      } else if (!document.querySelector('script[src*="dapi.kakao.com"]')) {
+        const script = document.createElement('script');
+        script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.REACT_APP_KAKAO_MAP_API_KEY}&libraries=services&autoload=false`;
+        script.onload = () => {
           window.kakao.maps.load(() => {
             initMap();
           });
-        } else if (!document.querySelector('script[src*="dapi.kakao.com"]')) {
-          const script = document.createElement('script');
-          script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.REACT_APP_KAKAO_MAP_API_KEY}&libraries=services&autoload=false`;
-          script.onload = () => {
-          console.log('카카오맵 스크립트 로드 완료');
-            window.kakao.maps.load(() => {
-              initMap();
-            });
-          };
-          script.onerror = () => {
-          console.error('카카오맵 스크립트 로드 실패');
-            setLayerMessage('카카오맵 스크립트를 로드할 수 없습니다.');
-          setShowLayer(true); // 레이어 표시
-          };
-          document.head.appendChild(script);
-        }
-      };
+        };
+        script.onerror = () => {
+          setLayerMessage('카카오맵 스크립트를 로드할 수 없습니다.');
+          setShowLayer(true);
+        };
+        document.head.appendChild(script);
+      }
+    };
 
-      loadKakaoMap();
-  }, [initMap]);
+    loadKakaoMap();
+  }, []);
 
   const handleResultClick = (item, index) => {
     const coords = new window.kakao.maps.LatLng(item.y, item.x);
 
-    // 기존 마커가 있으면 제거
-    if (marker) {
-      marker.setMap(null);
-    }
-
-    // 새 마커 생성 및 지도에 표시
     const newMarker = new window.kakao.maps.Marker({
       map: mapInstance.current,
       position: coords,
     });
-    setMarker(newMarker);
+    setSearchMarkers(prevMarkers => [...prevMarkers, newMarker]);
 
-    // 지도 중심 이동
     mapInstance.current.setCenter(coords);
-
-    // 선택된 인덱스 저장
     setSelectedIndex(index);
   };
 
   const closeLayer = () => {
-    setShowLayer(false); // 레이어 닫기
+    setShowLayer(false);
   };
 
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === 'Enter' && showLayer) {
-        closeLayer(); // 엔터 키를 누르면 레이어 닫기
+        closeLayer();
       }
     };
 
@@ -205,7 +327,7 @@ const KakaoMap = ({ address }) => {
 
     return () => {
       if (showLayer) {
-        window.removeEventListener('keydown', handleKeyDown); // 이벤트 리스너 정리
+        window.removeEventListener('keydown', handleKeyDown);
       }
     };
   }, [showLayer]);
@@ -215,26 +337,44 @@ const KakaoMap = ({ address }) => {
       {showLayer && (
         <Layer>
           <LayerContent>
-            <p>{layerMessage}</p>
+            <p dangerouslySetInnerHTML={{ __html: layerMessage }} />
             <button onClick={closeLayer}>닫기</button>
           </LayerContent>
         </Layer>
       )}
-      <MapContainer ref={mapRef} />
-      {results.length > 0 && (
-        <h3>검색결과 총 {results.length} 건</h3>
-      )}
-      <ResultList>
-        {results.map((item, index) => (
-          <React.Fragment key={index}>
-            <ResultItem onClick={() => handleResultClick(item, index)}>
-              {item.place_name} ({item.address_name})
-            </ResultItem>
-          </React.Fragment>
-        ))}
-      </ResultList>
-      
-      
+      <Layout>
+        <LeftPanel>
+          <SearchRow>
+            <SearchInput
+              type="text"
+              placeholder="주소 또는 아파트명 검색"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') initMap();
+              }}
+            />
+            <SearchButton onClick={initMap}>검색</SearchButton>
+          </SearchRow>
+          {/* 검색결과 리스트 추가 */}
+          <ResultList>
+            {results.map((item, index) => (
+              <ResultItem
+                key={item.id || index}
+                onClick={() => handleResultClick(item, index)}
+                style={{
+                  background: selectedIndex === index ? '#e6f0ff' : '#fff',
+                  fontWeight: selectedIndex === index ? 'bold' : 'normal',
+                }}
+              >
+                {item.place_name} <br />
+                <span style={{ fontSize: '13px', color: '#888' }}>{item.address_name}</span>
+              </ResultItem>
+            ))}
+          </ResultList>
+        </LeftPanel>
+        <MapContainer ref={mapRef} />
+      </Layout>
     </>
   );
 };
