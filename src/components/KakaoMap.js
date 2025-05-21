@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apartments } from '../data/apartments';
+import myLocationIcon from '../assets/my-location.png'; // 아이콘 파일을 public 또는 src/assets에 두세요.
 
 const RECENT_KEY = 'recent_addresses';
 
@@ -19,6 +20,7 @@ const KakaoMap = () => {
   const [infoOverlay, setInfoOverlay] = useState(null);
   const infoOverlayRef = useRef(null);
   const navigate = useNavigate();
+  const myLocationMarkerRef = useRef(null);
 
   // 최근 검색어 로드
   useEffect(() => {
@@ -88,46 +90,344 @@ const KakaoMap = () => {
 
             if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
 
+            // '구' 추출: displayAddr에서 'XX구' 패턴 찾기
+            let gu = '';
+            const guMatch = displayAddr.match(/([가-힣]+구)/);
+            if (guMatch) {
+              gu = guMatch[1];
+            }
+
+            // gu.json에서 구 코드 가져오기
+            let guCode = '';
+            try {
+              const guData = await import('../data/gu.json');
+              if (gu && guData && Array.isArray(guData.default)) {
+              const found = guData.default.find(g => g.name === gu);
+              if (found) guCode = found.code;
+              }
+            } catch (e) {
+              guCode = '';
+            }
+
+            // 구 코드가 없으면 기본값으로 '11000' 사용
+            if (!guCode) guCode = '11000';    
+
+  
+            // 1. 거래정보 API 호출
+            let tradeInfoHtml = '<div style="color:#888;font-size:14px;text-align:center;padding:5px 5px">거래 정보 없음</div>';
+            let dealYmd = '';
+            try {
+              dealYmd = new Date().toISOString().slice(0,7).replace('-',''); // 예: 202505
+              const tradeRes = await fetch(
+                `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&LAWD_CD=${guCode}&DEAL_YMD=${dealYmd}&pageNo=1&numOfRows=10000`
+              );
+              if (tradeRes.ok) {
+                const tradeXml = await tradeRes.text();
+                // XML 파싱
+                const parser = new window.DOMParser();
+                const xmlDoc = parser.parseFromString(tradeXml, "text/xml");
+                const items = Array.from(xmlDoc.getElementsByTagName("item"));
+                // 아파트명으로 필터링
+                // 아파트명을 console.log로 확인
+                console.log('아파트명:', apart.name);
+                console.log('XML 아이템:', items);
+                // 아파트명으로 필터링
+                const filtered = items.filter(item => {
+                  const name = item.getElementsByTagName("aptNm")[0]?.textContent?.trim();
+                  const roadNm = item.getElementsByTagName("roadNm")[0]?.textContent?.trim();
+                  return (name === apart.name.replace("아파트","") || roadNm.includes(apart.doroJuso));
+                });
+                // 거래일 기준 내림차순 정렬
+                const sorted = filtered.sort((a, b) => {
+                  const ay = a.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+                  const am = a.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const ad = a.getElementsByTagName("dealDay")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const by = b.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+                  const bm = b.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const bd = b.getElementsByTagName("dealDay")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const adate = ay + am + ad;
+                  const bdate = by + bm + bd;
+                  return bdate.localeCompare(adate);
+                });
+                if (sorted.length > 0) {
+                  tradeInfoHtml = `
+                    <table style="width:100%;margin-top:10px;font-size:14px;" >
+                      <thead>
+                        <tr>
+                          <th style="color:#3490dc;">거래일</th>
+                          <th style="color:#3490dc;">전용면적</th>
+                          <th style="color:#3490dc;">층</th>
+                          <th style="color:#3490dc;">거래가(만원)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${sorted.slice(0,100).map(item => {
+                          const y = item.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '-';
+                          const m = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim() || '-';
+                          const d = item.getElementsByTagName("dealDay")[0]?.textContent?.trim() || '-';
+                          const area = item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '-';
+                          const floor = item.getElementsByTagName("floor")[0]?.textContent?.trim() || '-';
+                          const price = item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '-';
+                          const ymd = (y !== '-' && m !== '-' && d !== '-') ? `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}` : '-';
+                          return `<tr>
+                            <td align="center">${ymd}</td>
+                            <td align="center">${area !== '-' ? parseFloat(area).toFixed(1) : '-'} / ${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
+                            <td align="center">${floor}</td>
+                            <td align="center" style="font-weight:bold;color:#e53e3e;">${price !== '-' ? formatKoreanPrice(price) : '-'}</td>
+                          </tr>`;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                  `;
+                }
+              }
+            } catch (e) {
+              tradeInfoHtml = '<div style="color:#888;font-size:14px;">거래 정보 조회 실패</div>';
+            }
+
+            // ...기존 infoContent 생성 부분에서 거래정보 추가...
+            // 월 이동 함수: overlay 내부에서 window에 등록
+            window.changeAptDealMonth = async (aptcd, guCode, baseYmd, diff) => {
+              // baseYmd: 'YYYYMM', diff: -1(이전), 1(다음)
+              let y = parseInt(baseYmd.slice(0, 4), 10);
+              let m = parseInt(baseYmd.slice(4, 6), 10) + diff;
+              if (m < 1) { y -= 1; m = 12; }
+              if (m > 12) { y += 1; m = 1; }
+              const newYmd = `${y}${String(m).padStart(2, '0')}`;
+              // 재호출
+              if (window[`showAptInfo_${aptcd}`]) {
+              window[`showAptInfo_${aptcd}`](newYmd);
+              }
+            };
+
+            // infoContent 생성
             const infoContent = `
               <div class="apt-info-overlay" style="background:#fff;border:1px solid #3490dc;border-radius:12px;padding:24px;min-width:240px;box-shadow:0 2px 12px rgba(52,144,220,0.08);font-size:16px;position:relative;">
+              <div style="font-size:20px;font-weight:bold;margin-bottom:12px;color:#3490dc;">🏦 ${item.kaptName}</div>
+              <table style="width:100%;border-collapse:collapse;">
+                <tbody>
+                <tr>
+                  <th style="text-align:left;padding:4px 8px;color:#3490dc;">준공일자</th>
+                  <td style="padding:4px 0;">${usedateStr || '-'} (${item.kaptdaCnt} 세대)</td>
+                </tr>
+                <tr>
+                  <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
+                  <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
+                </tr>
+                <tr>
+                  <th style="text-align:left;padding:4px 8px;color:#3490dc;">주소</th>
+                  <td style="padding:4px 0;word-break:break-all;max-width:220px;">${displayAddr}</td>
+                </tr>
+                <tr>
+                  <td colspan="2" align="center" style="padding-top:8px;">
+                  <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" 
+                    target="_blank" 
+                    style="display:inline-block;padding:4px 16px;margin-right:12px;border-radius:6px;border:2px solid #38a169;background:#fff;font-weight:bold;color:#38a169;text-decoration:none;">
+                    NAVER부동산
+                  </a>
+                  <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" 
+                    target="_blank" 
+                    style="display:inline-block;padding:4px 16px;border-radius:6px;border:2px solid #ecc94b;background:#fff;font-weight:bold;color:#ecc94b;text-decoration:none;">
+                    KB부동산
+                  </a>
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+              <div style="margin-top:16px;">
+                <div style="font-weight:bold;color:#3490dc;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:8px;">
+                <button onclick="window.changeAptDealMonth('${apart.aptcd}','${guCode}','${dealYmd}',-1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8592;</button>
+                <span>${dealYmd.slice(0,4)}.${dealYmd.slice(4,8)} 실거래가</span>
+                <button onclick="window.changeAptDealMonth('${apart.aptcd}','${guCode}','${dealYmd}',1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8594;</button>
+                </div>
+                ${tradeInfoHtml}
+              </div>
+              <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
+              </div>
+            `;
+
+            // showAptInfo 함수가 월 이동 지원하도록 인자 처리
+            window[`showAptInfo_${apart.aptcd}`] = async (ymd) => {
+              try {
+              const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+              if (!res.ok) throw new Error('정보를 불러올 수 없습니다.');
+              const data = await res.json();
+              const item = data.response?.body?.item;
+              if (!item) throw new Error('정보 없음');
+
+              let usedate = item.kaptUsedate;
+              let usedateStr = '';
+              if (usedate && usedate.length === 8) {
+                usedateStr = `${usedate.slice(0,4)}.${usedate.slice(4,6)}.${usedate.slice(6,8)}`;
+              }
+
+              let displayAddr = item.kaptAddr;
+              if (item.kaptAddr && item.kaptName && item.kaptAddr.includes(item.kaptName)) {
+                displayAddr = item.kaptAddr.replace(item.kaptName, '').replace(/\s+/g, ' ').trim();
+              }
+
+              if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
+
+              // '구' 추출: displayAddr에서 'XX구' 패턴 찾기
+              let gu = '';
+              const guMatch = displayAddr.match(/([가-힣]+구)/);
+              if (guMatch) {
+                gu = guMatch[1];
+              }
+
+              // gu.json에서 구 코드 가져오기
+              let guCode = '';
+              try {
+                const guData = await import('../data/gu.json');
+                if (gu && guData && Array.isArray(guData.default)) {
+                const found = guData.default.find(g => g.name === gu);
+                if (found) guCode = found.code;
+                }
+              } catch (e) {
+                guCode = '';
+              }
+              if (!guCode) guCode = '11000';
+
+              // 거래정보 API 호출
+              let tradeInfoHtml = '<div style="color:#888;font-size:14px;text-align:center;padding:5px 5px">거래 정보 없음</div>';
+              let dealYmd = ymd || new Date().toISOString().slice(0,7).replace('-','');
+              try {
+                const tradeRes = await fetch(
+                `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&LAWD_CD=${guCode}&DEAL_YMD=${dealYmd}&pageNo=1&numOfRows=1000`
+                );
+                if (tradeRes.ok) {
+                const tradeXml = await tradeRes.text();
+                const parser = new window.DOMParser();
+                const xmlDoc = parser.parseFromString(tradeXml, "text/xml");
+                const items = Array.from(xmlDoc.getElementsByTagName("item"));
+                const filtered = items.filter(item => {
+                  const name = item.getElementsByTagName("aptNm")[0]?.textContent?.trim();
+                  const roadNm = item.getElementsByTagName("roadNm")[0]?.textContent?.trim();
+                  const roadNmBonbun = item.getElementsByTagName("roadNmBonbun")[0]?.textContent?.trim();
+                  const roadStr = roadNm + (roadNmBonbun ? ` ${roadNmBonbun.replace(/^0+/, "")}` : '');
+                  
+                  console.log('roadNm:', roadStr);
+                  console.log('doroJuso:', apart.address);      
+                  //아파트명이 동일하거나 주소에 도로명 주소가 포함된 경우            
+                  return (name === apart.name.replace("아파트","") || apart.address.includes(roadStr));
+                });
+                const sorted = filtered.sort((a, b) => {
+                  const ay = a.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+                  const am = a.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const ad = a.getElementsByTagName("dealDay")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const by = b.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+                  const bm = b.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const bd = b.getElementsByTagName("dealDay")[0]?.textContent?.trim().padStart(2, '0') || '';
+                  const adate = ay + am + ad;
+                  const bdate = by + bm + bd;
+                  return bdate.localeCompare(adate);
+                });
+                if (sorted.length > 0) {
+                  tradeInfoHtml = `
+                  <table style="width:100%;margin-top:10px;font-size:14px;" >
+                    <thead>
+                    <tr>
+                      <th style="color:#3490dc;">거래일</th>
+                      <th style="color:#3490dc;">전용면적</th>
+                      <th style="color:#3490dc;">층</th>
+                      <th style="color:#3490dc;">거래가(만원)</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    ${sorted.slice(0,100).map(item => {
+                      const y = item.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '-';
+                      const m = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim() || '-';
+                      const d = item.getElementsByTagName("dealDay")[0]?.textContent?.trim() || '-';
+                      const area = item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '-';
+                      const floor = item.getElementsByTagName("floor")[0]?.textContent?.trim() || '-';
+                      const price = item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '-';
+                      const ymd = (y !== '-' && m !== '-' && d !== '-') ? `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}` : '-';
+                      return `<tr>
+                      <td align="center">${ymd}</td>
+                      <td align="center">${area !== '-' ? parseFloat(area).toFixed(1) : '-'} / ${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
+                      <td align="center">${floor}</td>
+                      <td align="center" style="font-weight:bold;color:#e53e3e;">${price !== '-' ? formatKoreanPrice(price) : '-'}
+                      </td>
+                      </tr>`;
+                    }).join('')}
+                    </tbody>
+                  </table>
+                  `;
+                }
+                }
+              } catch (e) {
+                tradeInfoHtml = '<div style="color:#888;font-size:14px;">거래 정보 조회 실패</div>';
+              }
+
+              // infoContent 재생성
+              const infoContent = `
+                <div class="apt-info-overlay" style="background:#fff;border:1px solid #3490dc;border-radius:12px;padding:24px;min-width:240px;box-shadow:0 2px 12px rgba(52,144,220,0.08);font-size:16px;position:relative;">
                 <div style="font-size:20px;font-weight:bold;margin-bottom:12px;color:#3490dc;">🏦 ${item.kaptName}</div>
                 <table style="width:100%;border-collapse:collapse;">
                   <tbody>
-                    <tr>
-                      <th style="text-align:left;padding:4px 8px;color:#3490dc;">세대수</th>
-                      <td style="padding:4px 0;">${item.kaptdaCnt}</td>
-                    </tr>
-                    <tr>
-                      <th style="text-align:left;padding:4px 8px;color:#3490dc;">준공일자</th>
-                      <td style="padding:4px 0;">${usedateStr || '-'}</td>
-                    </tr>
-                    <tr>
-                      <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
-                      <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
-                    </tr>
-                    <tr>
-                      <th style="text-align:left;padding:4px 8px;color:#3490dc;">주소</th>
-                      <td style="padding:4px 0;word-break:break-all;max-width:220px;">${displayAddr}</td>
-                    </tr>
-                    <tr>
-                      <td colspan="2" align="center" style="padding-top:8px;">
-                        <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" 
-                           target="_blank" 
-                           style="display:inline-block;padding:4px 16px;margin-right:12px;border-radius:6px;border:2px solid #38a169;background:#fff;font-weight:bold;color:#38a169;text-decoration:none;">
-                          NAVER부동산
-                        </a>
-                        <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" 
-                           target="_blank" 
-                           style="display:inline-block;padding:4px 16px;border-radius:6px;border:2px solid #ecc94b;background:#fff;font-weight:bold;color:#ecc94b;text-decoration:none;">
-                          KB부동산
-                        </a>
-                      </td>
-                    </tr>
+                  <tr>
+                    <th style="text-align:left;padding:4px 8px;color:#3490dc;">준공일자</th>
+                    <td style="padding:4px 0;">${usedateStr || '-'} (${item.kaptdaCnt} 세대)</td>
+                  </tr>
+                  <tr>
+                    <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
+                    <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
+                  </tr>
+                  <tr>
+                    <th style="text-align:left;padding:4px 8px;color:#3490dc;">주소</th>
+                    <td style="padding:4px 0;word-break:break-all;max-width:220px;">${displayAddr}</td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" align="center" style="padding-top:8px;">
+                    <a href="https://new.land.naver.com/complexes?ms=${apart.lat},${apart.lng}" 
+                      target="_blank" 
+                      style="display:inline-block;padding:4px 16px;margin-right:12px;border-radius:6px;border:2px solid #38a169;background:#fff;font-weight:bold;color:#38a169;text-decoration:none;">
+                      NAVER부동산
+                    </a>
+                    <a href="https://kbland.kr/cl/51022321130?xy=${apart.lat},${apart.lng}" 
+                      target="_blank" 
+                      style="display:inline-block;padding:4px 16px;border-radius:6px;border:2px solid #ecc94b;background:#fff;font-weight:bold;color:#ecc94b;text-decoration:none;">
+                      KB부동산
+                    </a>
+                    </td>
+                  </tr>
                   </tbody>
                 </table>
+                <div style="margin-top:16px;">
+                  <div style="font-weight:bold;color:#3490dc;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:8px;">
+                  <button onclick="window.changeAptDealMonth('${apart.aptcd}','${guCode}','${dealYmd}',-1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8592;</button>
+                  <span>${dealYmd.slice(0,4)}.${dealYmd.slice(4,8)} 실거래가</span>
+                  <button onclick="window.changeAptDealMonth('${apart.aptcd}','${guCode}','${dealYmd}',1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8594;</button>
+                  </div>
+                  ${tradeInfoHtml}
+                </div>
                 <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
-              </div>
-            `;
+                </div>
+              `;
+              const overlay = new window.kakao.maps.CustomOverlay({
+                position,
+                content: infoContent,
+                yAnchor: -0.2,
+                zIndex: 20,
+              });
+              overlay.setMap(mapInstance.current);
+              setInfoOverlay(overlay);
+              infoOverlayRef.current = overlay;
+
+              window.closeAptInfoOverlay = () => {
+                if (infoOverlayRef.current) {
+                infoOverlayRef.current.setMap(null);
+                setInfoOverlay(null);
+                infoOverlayRef.current = null;
+                }
+              };
+              } catch (e) {
+              if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
+              setInfoOverlay(null);
+              infoOverlayRef.current = null;
+              alert('정보를 불러올 수 없습니다.');
+              }
+            };
             const overlay = new window.kakao.maps.CustomOverlay({
               position,
               content: infoContent,
@@ -290,6 +590,35 @@ const KakaoMap = () => {
     setShowLayer(false);
   };
 
+  // 현재 위치로 이동하는 함수
+  const moveToMyLocation = () => {
+    if (!mapInstance.current || !window.kakao?.maps) return;
+    if (!navigator.geolocation) {
+      alert('이 브라우저에서는 위치 기능을 지원하지 않습니다.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const loc = new window.kakao.maps.LatLng(lat, lng);
+
+        // 기존 마커 제거
+        if (myLocationMarkerRef.current) {
+          myLocationMarkerRef.current.setMap(null);
+          myLocationMarkerRef.current = null;
+        }
+
+        // 마커 생성하지 않고 지도만 이동
+        mapInstance.current.setCenter(loc);
+        mapInstance.current.setLevel(3);
+      },
+      err => {
+        alert('위치 정보를 가져올 수 없습니다.');
+      }
+    );
+  };
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === 'Enter' && showLayer) {
@@ -307,6 +636,45 @@ const KakaoMap = () => {
       }
     };
   }, [showLayer]);
+
+  // 동적으로 스타일 태그 추가 (중복 방지)
+  useEffect(() => {
+    if (!document.getElementById('kakaomap-mobile-style')) {
+      const style = document.createElement('style');
+      style.id = 'kakaomap-mobile-style';
+      style.innerHTML = `
+        @media (max-width: 768px) {
+          .kakaomap-flex-wrap {
+            flex-direction: column !important;
+            gap: 0 !important;
+            min-height: 0 !important;
+            height: 100vh !important;
+          }
+          .kakaomap-left-panel {
+            width: 100% !important;
+            min-width: 0 !important;
+            height: auto !important;
+            max-height: 50vh !important; /* 추가: 모바일에서 최대 높이 제한 */
+            border-radius: 0 0 12px 12px !important;
+            box-shadow: none !important;
+            padding: 16px 8px !important;
+            overflow: hidden !important;
+          }
+          .kakaomap-map-panel {
+            width: 100% !important;
+            height: 400px !important;
+            min-height: 300px !important;
+            border-radius: 12px 12px 0 0 !important;
+          }
+          .kakaomap-result-list {
+            max-height: 30vh !important; /* 추가: 검색 결과 리스트 스크롤 */
+            overflow-y: auto !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
 
   return (
     <>
@@ -345,13 +713,15 @@ const KakaoMap = () => {
           </div>
         </div>
       )}
-      <div style={{
+      <div  className="kakaomap-flex-wrap"
+      style={{
         display: 'flex',
         width: '100%',
         minHeight: '500px',
         gap: '24px'
       }}>
-        <div style={{
+        <div  className="kakaomap-left-panel"
+        style={{
           display: 'flex',
           flexDirection: 'column',
           flex: 'none',
@@ -422,7 +792,9 @@ const KakaoMap = () => {
               </ul>
             </div>
           )}
-          <ul style={{
+          <ul 
+          className="kakaomap-result-list"
+          style={{
             marginTop: '8px',
             padding: 0,
             listStyle: 'none',
@@ -457,9 +829,34 @@ const KakaoMap = () => {
             height: '100vh',
             borderRadius: '12px',
             overflow: 'hidden',
-            background: '#f6fff6'
+            background: '#f6fff6',
+            position: 'relative'
           }}
-        />
+        >
+          {/* 현재위치 버튼 - 좌측하단으로 이동 */}
+          <button
+            onClick={moveToMyLocation}
+            style={{
+              position: 'absolute',
+              left: 40,
+              bottom: 'calc(100px + env(safe-area-inset-bottom))', // 변경
+              zIndex: 10,
+              background: '#fff',
+              border: '1px solid #3490dc',
+              borderRadius: '50%',
+              width: 48,
+              height: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(52,144,220,0.12)',
+              cursor: 'pointer'
+            }}
+            title="내 위치로 이동"
+          >
+            <img src={myLocationIcon} alt="내 위치" style={{ width: 28, height: 28 }} />
+          </button>
+        </div>
       </div>
     </>
   );
@@ -467,3 +864,29 @@ const KakaoMap = () => {
 
 export default KakaoMap;
 
+// 사용자 정의 함수
+function formatKoreanPrice(price) {
+  const units = [
+    { value: 10000, label: '억' },
+    { value: 1000, label: '천' },
+    { value: 100, label: '백' },
+    { value: 10, label: '십' },
+    { value: 1, label: '' }  // 만 단위라 마지막에 "만원" 붙일 것
+  ];
+
+  let result = '';
+  for (const unit of units) {
+    const unitCount = Math.floor(price / unit.value);
+    if (unitCount > 0) {
+      if (unit.value >= 10) {
+        // 1십 대신 십으로 표기하는 처리 (선택 사항)
+        result += (unitCount > 1 ? unitCount : '') + unit.label;
+      } else {
+        result += unitCount + unit.label;
+      }
+      price %= unit.value;
+    }
+  }
+
+  return result;
+}

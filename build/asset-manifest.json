@@ -1,10 +1,11 @@
 {
   "files": {
-    "main.js": "/hog/static/js/main.29ce13b0.js",
+    "main.js": "/hog/static/js/main.7037acab.js",
+    "static/media/my-location.png": "/hog/static/media/my-location.4ba2450b71e973e57b09.png",
     "index.html": "/hog/index.html",
-    "main.29ce13b0.js.map": "/hog/static/js/main.29ce13b0.js.map"
+    "main.7037acab.js.map": "/hog/static/js/main.7037acab.js.map"
   },
   "entrypoints": [
-    "static/js/main.29ce13b0.js"
+    "static/js/main.7037acab.js"
   ]
 }
