@@ -1,31 +1,28 @@
-// 필요한 React 훅과 컴포넌트들을 임포트
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apartments } from '../data/apartments';
-import myLocationIcon from '../assets/my-location.png';
+import myLocationIcon from '../assets/my-location.png'; // 아이콘 파일을 public 또는 src/assets에 두세요.
 
-// 최근 검색어를 저장하기 위한 로컬 스토리지 키
 const RECENT_KEY = 'recent_addresses';
 
 const KakaoMap = () => {
-  // 상태 관리를 위한 useState 훅 선언
-  const [address, setAddress] = useState(''); // 검색 주소
-  const [recentAddresses, setRecentAddresses] = useState([]); // 최근 검색 주소 목록
-  const mapRef = useRef(null); // 지도 컨테이너 참조
-  const mapInstance = useRef(null); // 카카오맵 인스턴스 참조
-  const [results, setResults] = useState([]); // 검색 결과
-  const [showLayer, setShowLayer] = useState(false); // 레이어 표시 여부
-  const [layerMessage, setLayerMessage] = useState(''); // 레이어 메시지
-  const apartmentMarkers = useRef([]); // 아파트 마커 배열
-  const apartmentOverlays = useRef([]); // 아파트 오버레이 배열
-  const [searchMarkers, setSearchMarkers] = useState([]); // 검색 결과 마커
-  const [selectedIndex, setSelectedIndex] = useState(null); // 선택된 인덱스
-  const [infoOverlay, setInfoOverlay] = useState(null); // 정보 오버레이
-  const infoOverlayRef = useRef(null); // 정보 오버레이 참조
-  const navigate = useNavigate(); // 라우터 네비게이션
-  const myLocationMarkerRef = useRef(null); // 현재 위치 마커 참조
+  const [address, setAddress] = useState('');
+  const [recentAddresses, setRecentAddresses] = useState([]);
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const [results, setResults] = useState([]);
+  const [showLayer, setShowLayer] = useState(false);
+  const [layerMessage, setLayerMessage] = useState('');
+  const apartmentMarkers = useRef([]);
+  const apartmentOverlays = useRef([]);
+  const [searchMarkers, setSearchMarkers] = useState([]);
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [infoOverlay, setInfoOverlay] = useState(null);
+  const infoOverlayRef = useRef(null);
+  const navigate = useNavigate();
+  const myLocationMarkerRef = useRef(null);
 
-  // 컴포넌트 마운트 시 최근 검색어 로드
+  // 최근 검색어 로드
   useEffect(() => {
     const stored = localStorage.getItem(RECENT_KEY);
     if (stored) {
@@ -33,48 +30,47 @@ const KakaoMap = () => {
     }
   }, []);
 
-  // 최근 검색어 저장 함수
+  // 검색어 저장 함수
   const saveRecentAddress = useCallback((keyword) => {
     if (!keyword || !keyword.trim()) return;
     setRecentAddresses(prev => {
       const arr = [keyword, ...prev.filter(v => v !== keyword)];
-      const limited = arr.slice(0, 10); // 최대 10개까지만 저장
+      const limited = arr.slice(0, 10); // 최대 10개
       localStorage.setItem(RECENT_KEY, JSON.stringify(limited));
       return limited;
     });
   }, []);
 
-  // 지도 초기화 함수
   const initMap = useCallback((searchWord) => {
     const keyword = typeof searchWord === 'string' ? searchWord : address;
     if (!mapRef.current || !window.kakao?.maps) return;
 
     if (!mapInstance.current) {
-      // 지도 기본 옵션 설정
       const options = {
         center: new window.kakao.maps.LatLng(37.5988459,127.0136836),
         level: 3,
       };
-      // 지도 인스턴스 생성
       mapInstance.current = new window.kakao.maps.Map(mapRef.current, options);
 
-      // 지도 컨트롤 추가
-      var mapTypeControl = new window.kakao.maps.MapTypeControl();
+      // 지도 타입 변경 컨트롤을 생성한다
+		  var mapTypeControl = new window.kakao.maps.MapTypeControl();
+
+		  // 지도의 상단 우측에 지도 타입 변경 컨트롤을 추가한다
       mapInstance.current.addControl(mapTypeControl, window.kakao.maps.ControlPosition.TOPRIGHT);	
 
+   		// 지도에 확대 축소 컨트롤을 생성한다
       var zoomControl = new kakao.maps.ZoomControl();
+
+      // 지도의 우측에 확대 축소 컨트롤을 추가한다
       mapInstance.current.addControl(zoomControl, kakao.maps.ControlPosition.RIGHT);
       
-      // 아파트 마커 생성 및 이벤트 처리
       apartments.forEach(apart => {
         const position = new window.kakao.maps.LatLng(apart.lat, apart.lng);
 
         let tooltipOverlay = null;
 
-        // 아파트 정보 표시 함수
         window[`showAptInfo_${apart.aptcd}`] = async () => {
           try {
-            // 아파트 기본 정보 API 호출
             const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
             if (!res.ok) throw new Error('정보를 불러올 수 없습니다.');
             const data = await res.json();
@@ -189,6 +185,7 @@ const KakaoMap = () => {
               tradeInfoHtml = '<div style="color:#888;font-size:14px;">거래 정보 조회 실패</div>';
             }
 
+            // ...기존 infoContent 생성 부분에서 거래정보 추가...
             // 월 이동 함수: overlay 내부에서 window에 등록
             window.changeAptDealMonth = async (aptcd, guCode, baseYmd, diff) => {
               // baseYmd: 'YYYYMM', diff: -1(이전), 1(다음)
@@ -417,24 +414,19 @@ const KakaoMap = () => {
                 <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
                 </div>
               `;
-              // 오버레이가 표시될 때 지도 확대/축소 비활성화
               const overlay = new window.kakao.maps.CustomOverlay({
+                position,
                 content: infoContent,
-                position: position,
                 yAnchor: -0.2,
                 zIndex: 20,
               });
-              // 오버레이가 열릴 때 지도 확대/축소 비활성화
               overlay.setMap(mapInstance.current);
-              mapInstance.current.setZoomable(false);
               setInfoOverlay(overlay);
               infoOverlayRef.current = overlay;
 
               window.closeAptInfoOverlay = () => {
                 if (infoOverlayRef.current) {
                 infoOverlayRef.current.setMap(null);
-                // 오버레이가 닫힐 때 지도 확대/축소 다시 활성화
-                mapInstance.current.setZoomable(true);
                 setInfoOverlay(null);
                 infoOverlayRef.current = null;
                 }
@@ -452,22 +444,15 @@ const KakaoMap = () => {
               yAnchor: -0.2,
               zIndex: 20,
             });
-            // 오버레이가 열릴 때 지도 확대/축소 비활성화
             overlay.setMap(mapInstance.current);
-            mapInstance.current.setZoomable(false);
             setInfoOverlay(overlay);
             infoOverlayRef.current = overlay;
 
             window.closeAptInfoOverlay = () => {
               if (infoOverlayRef.current) {
                 infoOverlayRef.current.setMap(null);
-                // 오버레이가 닫힐 때 지도 확대/축소 다시 활성화
-                mapInstance.current.setZoomable(true);
-                // 배경 오버레이도 제거
-                const background = document.querySelector('.apt-info-overlay-background');
-                if (background) {
-                  background.remove();
-                }
+                setInfoOverlay(null);
+                infoOverlayRef.current = null;
               }
             };
           } catch (e) {

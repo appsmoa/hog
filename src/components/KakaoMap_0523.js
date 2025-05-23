@@ -224,7 +224,7 @@ const KakaoMap = () => {
 			let tradeInfoHtml = '<div style="color:#888;font-size:14px;text-align:center;padding:5px 5px">거래 정보 없음</div>';
 			if (sorted.length > 0) {
 			  tradeInfoHtml = `
-				<div style="max-height:300px; overflow-y:auto; border-top:1px solid #e2e8f0;" class="trade-info-scroll" onwheel="event.stopPropagation();" onclick="event.stopPropagation();" onmousewheel="event.stopPropagation();" ontouchmove="event.stopPropagation();">
+				<div style="max-height:300px; overflow-y:auto; border-top:1px solid #e2e8f0;" class="trade-info-scroll" onwheel="event.stopPropagation();">
 				  <table style="width:100%;margin-top:10px;font-size:14px;" >
 				    <thead style="position:sticky; top:0; background-color:white; z-index:1;">
 				      <tr>
@@ -258,7 +258,7 @@ const KakaoMap = () => {
 
 			// 최종 오버레이 내용 업데이트
 			const finalContent = `
-			  <div class="apt-info-overlay" style="background:#fff;border:1px solid #3490dc;border-radius:12px;padding:24px;min-width:240px;box-shadow:0 2px 12px rgba(52,144,220,0.08);font-size:16px;position:relative;" onwheel="event.stopPropagation();" onclick="event.stopPropagation();" onmousewheel="event.stopPropagation();" ontouchmove="event.stopPropagation();">
+			  <div class="apt-info-overlay" style="background:#fff;border:1px solid #3490dc;border-radius:12px;padding:24px;min-width:240px;box-shadow:0 2px 12px rgba(52,144,220,0.08);font-size:16px;position:relative;" onwheel="event.stopPropagation();">
 			    <div style="font-size:20px;font-weight:bold;margin-bottom:12px;color:#3490dc;">🏦 ${item.kaptName}</div>
 			    <table style="width:100%;border-collapse:collapse;">
 			      <tbody>
@@ -621,7 +621,7 @@ const KakaoMap = () => {
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
             <input
               type="text"
-              placeholder="주소 또는 아파트명 검색"
+              placeholder="주소 ��는 아파트명 검색"
               value={address}
               onChange={e => setAddress(e.target.value)}
               onKeyDown={e => {
@@ -739,7 +739,7 @@ const KakaoMap = () => {
             }}
             title="내 위치로 이동"
           >
-            <img src={myLocationIcon} alt="내 위치" style={{ width: 28, height: 28 }} /> 
+            <img src={myLocationIcon} alt="내 위치" style={{ width: 28, height: 28 }} />
           </button>
         </div>
       </div>
