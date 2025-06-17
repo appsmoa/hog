@@ -21,6 +21,23 @@ const KakaoMap = () => {
   const infoOverlayRef = useRef(null);
   const navigate = useNavigate();
   const myLocationMarkerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 모바일 기기 감지
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      console.log('모바일 감지:', mobile, navigator.userAgent); // 디버깅용 로그
+      setIsMobile(mobile);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   // 최근 검색어 로드
   useEffect(() => {
@@ -38,6 +55,20 @@ const KakaoMap = () => {
       const limited = arr.slice(0, 10); // 최대 10개
       localStorage.setItem(RECENT_KEY, JSON.stringify(limited));
       return limited;
+    });
+  }, []);
+
+  
+
+  // 검색어 삭제 함수
+  const removeRecentAddress = useCallback((keyword, e) => {
+    // 이벤트 전파 방지 (부모 요소의 클릭 이벤트가 발생하지 않도록)
+    e.stopPropagation();
+    
+    setRecentAddresses(prev => {
+      const filtered = prev.filter(v => v !== keyword);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(filtered));
+      return filtered;
     });
   }, []);
 
@@ -71,8 +102,13 @@ const KakaoMap = () => {
 
         window[`showAptInfo_${apart.aptcd}`] = async (customYear) => {
 		  try {
+
+       // 모바일 감지 직접 수행
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      console.log('함수 내 모바일 감지:', isMobileDevice);
+
 			// 기본 아파트 정보 가져오기
-			const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+			const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=QH%2FEF%2FM0JUBF39nJCvFLHnLVNA%2BVD1JQNLRnsDCONGj%2BcZUiprrOQ1UGAu1HkwIbXQsh9ErsVbmtG7KmJ8I%2FQw%3D%3D&kaptCode=${apart.aptcd}`);
 			if (!res.ok) throw new Error('정보를 불러올 수 없습니다.');
 			const data = await res.json();
 			const item = data.response?.body?.item;
@@ -85,21 +121,23 @@ const KakaoMap = () => {
 			  usedateStr = `${usedate.slice(0,4)}.${usedate.slice(4,6)}.${usedate.slice(6,8)}`;
 			}
 
+			// 주소에서 아파트 이름 제거하여 깔끔하게 표시
 			let displayAddr = item.kaptAddr;
 			if (item.kaptAddr && item.kaptName && item.kaptAddr.includes(item.kaptName)) {
 			  displayAddr = item.kaptAddr.replace(item.kaptName, '').replace(/\s+/g, ' ').trim();
 			}
 
-			// 기존 오버레이 제거
+			// 기존 오버레이가 있으면 제거
 			if (infoOverlayRef.current) infoOverlayRef.current.setMap(null);
 
-			// '구' 코드 가져오기
+			// 주소에서 '구' 추출 (예: '강남구', '서초구' 등)
 			let gu = '';
 			const guMatch = displayAddr.match(/([가-힣]+구)/);
 			if (guMatch) {
 			  gu = guMatch[1];
 			}
 
+			// 구 코드 가져오기 (법정동 코드)
 			let guCode = '';
 			try {
 			  const guData = await import('../data/gu.json');
@@ -110,6 +148,7 @@ const KakaoMap = () => {
 			} catch (e) {
 			  guCode = '';
 			}
+			// 구 코드가 없으면 서울시 전체 코드(11000) 사용
 			if (!guCode) guCode = '11000';
 
 			// 연도 설정 (customYear가 없으면 현재 연도 사용)
@@ -118,10 +157,10 @@ const KakaoMap = () => {
 			const allItems = [];
 			let dealYmd = `${year}${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
 
-			// 로딩 상태 표시
+			// 로딩 상태를 표시하는 HTML
 			const loadingHtml = '<div style="color:#888;font-size:14px;text-align:center;padding:20px;">1년치 데이터 로드 중...</div>';
 			
-			// 오버레이 생성 및 표시 (로딩 상태)
+			// 오버레이 생성 및 표시 (로딩 상태 포함)
 			const initialContent = `
 			  <div class="apt-info-overlay" style="background:#fff;border:1px solid #3490dc;border-radius:12px;padding:24px;min-width:240px;box-shadow:0 2px 12px rgba(52,144,220,0.08);font-size:16px;position:relative;" onwheel="event.stopPropagation();">
 			    <div style="font-size:20px;font-weight:bold;margin-bottom:12px;color:#3490dc;">🏦 ${item.kaptName}</div>
@@ -132,9 +171,13 @@ const KakaoMap = () => {
 			          <td style="padding:4px 0;">${usedateStr || '-'} (${item.kaptdaCnt} 세대)</td>
 			        </tr>
 			        <tr>
-			          <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
-			          <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
-			        </tr>
+              <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
+              <td style="padding:4px 0;">
+                ${item.kaptBcompany ? (item.kaptBcompany.length > 10 ? item.kaptBcompany.substring(0, 10) + '...' : item.kaptBcompany) : '-'}
+                / 
+                ${item.kaptAcompany ? (item.kaptAcompany.length > 10 ? item.kaptAcompany.substring(0, 10) + '...' : item.kaptAcompany) : '-'}
+              </td>
+          </tr>
 			        <tr>
 			          <th style="text-align:left;padding:4px 8px;color:#3490dc;">주소</th>
 			          <td style="padding:4px 0;word-break:break-all;max-width:220px;">${displayAddr}</td>
@@ -161,6 +204,9 @@ const KakaoMap = () => {
 			        <span>${year}년 실거래가</span>
 			        <button onclick="event.preventDefault(); window.changeAptDealYear('${apart.aptcd}','${guCode}','${year}',1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8594;</button>
 			      </div>
+			       ${!isMobileDevice ? `<div style="margin-bottom:16px;">
+			        <canvas id="priceChart-${apart.aptcd}" width="400" height="200"></canvas>
+			      </div>` : ''}
 			      ${loadingHtml}
 			    </div>
 			    <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
@@ -183,7 +229,7 @@ const KakaoMap = () => {
 			  const monthYmd = `${year}${String(m).padStart(2, '0')}`;
 			  try {
 				const tradeRes = await fetch(
-				  `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&LAWD_CD=${guCode}&DEAL_YMD=${monthYmd}&pageNo=1&numOfRows=1000`
+				  `https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?serviceKey=QH%2FEF%2FM0JUBF39nJCvFLHnLVNA%2BVD1JQNLRnsDCONGj%2BcZUiprrOQ1UGAu1HkwIbXQsh9ErsVbmtG7KmJ8I%2FQw%3D%3D&LAWD_CD=${guCode}&DEAL_YMD=${monthYmd}&pageNo=1&numOfRows=1000`
 				);
 				if (tradeRes.ok) {
 				  const tradeXml = await tradeRes.text();
@@ -203,7 +249,7 @@ const KakaoMap = () => {
 			  const roadNm = item.getElementsByTagName("roadNm")[0]?.textContent?.trim();
 			  const roadNmBonbun = item.getElementsByTagName("roadNmBonbun")[0]?.textContent?.trim();
 			  const roadStr = roadNm + (roadNmBonbun ? ` ${roadNmBonbun.replace(/^0+/, "")}` : '');
-			  
+			  //아파트명이 동일하거나, 도로명이 동일한 경우 아파트 정보 표시
 			  return (name === apart.name.replace("아파트","") || apart.address.includes(roadStr));
 			});
 
@@ -220,34 +266,39 @@ const KakaoMap = () => {
 			  return bdate.localeCompare(adate);
 			});
 
-			// 테이블 생성
+			// 거래 정보 테이블 HTML 생성
 			let tradeInfoHtml = '<div style="color:#888;font-size:14px;text-align:center;padding:5px 5px">거래 정보 없음</div>';
 			if (sorted.length > 0) {
+			  // 스크롤 가능한 테이블 생성
 			  tradeInfoHtml = `
 				<div style="max-height:300px; overflow-y:auto; border-top:1px solid #e2e8f0;" class="trade-info-scroll" onwheel="event.stopPropagation();" onclick="event.stopPropagation();" onmousewheel="event.stopPropagation();" ontouchmove="event.stopPropagation();">
-				  <table style="width:100%;margin-top:10px;font-size:14px;" >
+				  <table style="width:100%;margin-top:10px;font-size:14px;border-collapse:separate;border-spacing:0;" >
 				    <thead style="position:sticky; top:0; background-color:white; z-index:1;">
 				      <tr>
-				        <th style="color:#3490dc;">거래일</th>
-				        <th style="color:#3490dc;">전용면적</th>
-				        <th style="color:#3490dc;">층</th>
-				        <th style="color:#3490dc;">거래가(만원)</th>
+				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">거래일</th>
+				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">전용면적</th>
+                <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">동</th>
+				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">층</th>
+				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">거래가(만원)</th>
 				      </tr>
 				    </thead>
 				    <tbody>
-				      ${sorted.slice(0,100).map(item => {
+				      ${sorted.slice(0,100).map((item, index) => {
 				        const y = item.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '-';
 				        const m = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim() || '-';
 				        const d = item.getElementsByTagName("dealDay")[0]?.textContent?.trim() || '-';
 				        const area = item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '-';
+                const aptDong = item.getElementsByTagName("aptDong")[0]?.textContent?.trim() || '-';
 				        const floor = item.getElementsByTagName("floor")[0]?.textContent?.trim() || '-';
 				        const price = item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '-';
 				        const ymd = (y !== '-' && m !== '-' && d !== '-') ? `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}` : '-';
-				        return `<tr>
-				          <td align="center">${ymd}</td>
-				          <td align="center">${area !== '-' ? parseFloat(area).toFixed(1) : '-'}㎡ / ${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
-				          <td align="center">${floor}</td>
-				          <td align="center" style="font-weight:bold;color:#e53e3e;">${price !== '-' ? formatKoreanPrice(price) : '-'}</td>
+				        const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
+				        return `<tr style="background-color:${rowBg};transition:background-color 0.2s;" onmouseover="this.style.backgroundColor='#edf2f7'" onmouseout="this.style.backgroundColor='${rowBg}'">
+				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${ymd}</td>
+				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${area !== '-' ? parseFloat(area).toFixed(1) : '-'}㎡/${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
+                  <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${aptDong}</td>
+				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${floor}</td>
+				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;font-weight:bold;color:#e53e3e;">${price !== '-' ? formatKoreanPrice(price) : '-'}</td>
 				        </tr>`;
 				      }).join('')}
 				    </tbody>
@@ -267,12 +318,16 @@ const KakaoMap = () => {
 			          <td style="padding:4px 0;">${usedateStr || '-'} (${item.kaptdaCnt} 세대)</td>
 			        </tr>
 			        <tr>
-			          <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
-			          <td style="padding:4px 0;">${item.kaptAcompany || '-'}</td>
-			        </tr>
+              <th style="text-align:left;padding:4px 8px;color:#3490dc;">건설사</th>
+              <td style="padding:4px 0;">
+                ${item.kaptBcompany ? (item.kaptBcompany.length > 10 ? item.kaptBcompany.substring(0, 10) + '...' : item.kaptBcompany) : '-'}
+                / 
+                ${item.kaptAcompany ? (item.kaptAcompany.length > 10 ? item.kaptAcompany.substring(0, 10) + '...' : item.kaptAcompany) : '-'}
+              </td>
+          </tr>
 			        <tr>
 			          <th style="text-align:left;padding:4px 8px;color:#3490dc;">주소</th>
-			          <td style="padding:4px 0;word-break:break-all;max-width:220px;">${displayAddr}</td>
+			          <td style="padding:4px 0;word-break:break-all;max-width:220px;"> ${displayAddr}</td>
 			        </tr>
 			        <tr>
 			          <td colspan="2" align="center" style="padding-top:8px;">
@@ -296,6 +351,9 @@ const KakaoMap = () => {
 			        <span>${year}년 실거래가</span>
 			        <button onclick="event.preventDefault(); window.changeAptDealYear('${apart.aptcd}','${guCode}','${year}',1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8594;</button>
 			      </div>
+			       ${!isMobileDevice ? `<div style="margin-bottom:16px;">
+			        <canvas id="priceChart-${apart.aptcd}" width="400" height="200"></canvas>
+			      </div>` : ''}
 			      ${tradeInfoHtml}
 			    </div>
 			    <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
@@ -304,19 +362,64 @@ const KakaoMap = () => {
 			// 오버레이 내용 업데이트
 			if (infoOverlayRef.current) {
 			  infoOverlayRef.current.setContent(finalContent);
+
+			  // 모바일이 아닐 때만 차트 생성
+			  if (!isMobileDevice) {        
+          // Chart.js 스크립트가 로드되어 있는지 확인
+          if (!window.Chart) {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+            script.onload = () => createPriceChart(sorted, apart.aptcd);
+            document.head.appendChild(script);
+          } else {
+            // 이미 로드되어 있다면 바로 차트 생성
+            setTimeout(() => createPriceChart(sorted, apart.aptcd), 100);
+          }
+        }
 			}
 
-			// 연도 이동 함수
+			/**
+			 * 연도 이동 함수 - 다른 연도의 실거래가 조회
+			 * @param {string} aptcd - 아파트 코드
+			 * @param {string} guCode - 구 코드
+			 * @param {string} baseYear - 현재 표시 중인 연도
+			 * @param {number} diff - 이동할 연도 차이 (-1: 이전 연도, 1: 다음 연도)
+			 */
 			window.changeAptDealYear = async (aptcd, guCode, baseYear, diff) => {
 			  try {
+				// 연도 계산
 				const newYear = parseInt(baseYear) + diff;
+				
+				// 오버레이 내용 업데이트 (로딩 표시)
+				const loadingContent = document.querySelector('.apt-info-overlay');
+				if (loadingContent) {
+				  const yearDisplay = loadingContent.querySelector('div > div > span');
+				  if (yearDisplay) yearDisplay.textContent = `${newYear}년 실거래가`;
+				  
+				  // 이전/다음 버튼 업데이트
+				  const prevButton = loadingContent.querySelector('div > div > button:first-child');
+				  const nextButton = loadingContent.querySelector('div > div > button:last-child');
+				  if (prevButton) prevButton.onclick = (e) => { e.preventDefault(); window.changeAptDealYear(aptcd, guCode, newYear, -1); };
+				  if (nextButton) nextButton.onclick = (e) => { e.preventDefault(); window.changeAptDealYear(aptcd, guCode, newYear, 1); };
+				  
+				  // 데이터 영역 로딩 표시
+				  const dataArea = loadingContent.querySelector('div > div:last-child');
+				  if (dataArea && dataArea !== yearDisplay?.parentNode) {
+					dataArea.innerHTML = '<div style="color:#888;font-size:14px;text-align:center;padding:20px;">1년치 데이터 로드 중...</div>';
+				  }
+				}
+				
+				// 해당 아파트 정보 다시 불러오기 (새 연도로)
 				await window[`showAptInfo_${aptcd}`](`${newYear}01`);
 			  } catch (error) {
 				console.error('연도 이동 중 오류 발생:', error);
 			  }
 			};
 
-			// 오버레이 닫기 함수
+			/**
+			 * 오버레이 닫기 함수
+			 * 현재 표시 중인 오버레이를 지도에서 제거하고 관련 상태를 초기화합니다.
+			 */
 			window.closeAptInfoOverlay = () => {
 			  if (infoOverlayRef.current) {
 				infoOverlayRef.current.setMap(null);
@@ -326,51 +429,54 @@ const KakaoMap = () => {
 			};
 
 		  } catch (e) {
+			// 오류 처리
 			console.error('데이터 로드 실패:', e);
 			alert('정보를 불러올 수 없습니다.');
 		  }
 		};
-		// ... existing code ...
-
         const overlayContent = document.createElement('div');
         overlayContent.className = 'apartment-overlay';
         overlayContent.style.cssText = 'background:#fff;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:14px;color:#222;white-space:nowrap;margin-top:3px;box-shadow:0 1px 4px rgba(0,0,0,0.08);cursor:pointer;';
         overlayContent.innerHTML = `<span style="font-weight:bold">🏦 ${apart.name}</span>`;
 
         overlayContent.onmouseover = async (e) => {
+  // 모바일 기기 감지
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  // 모바일이 아닌 경우에만 툴팁 표시
+  if (!isMobile) {
+    if (tooltipOverlay) tooltipOverlay.setMap(null);
+    let address = apart.address;
+    let tnohsh = apart.tnohsh;
+    if (!address || !tnohsh) {
+      try {
+        const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}&_type=json`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const item = data.response?.body?.item;
+        address = item?.kaptAddr || '';
+        tnohsh = item?.kaptdaCnt || '';
+      } catch {
+        address = '(정보 없음)';
+        tnohsh = '-';
+      }
+    }
 
-          if (tooltipOverlay) tooltipOverlay.setMap(null);
-          let address = apart.address;
-          let tnohsh = apart.tnohsh;
-          if (!address || !tnohsh) {
-            try {
-              const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
-              if (!res.ok) throw new Error();
-              const data = await res.json();
-              const item = data.response?.body?.item;
-              address = item?.kaptAddr || '';
-              tnohsh = item?.kaptdaCnt || '';
-            } catch {
-              address = '(정보 없음)';
-              tnohsh = '-';
-            }
-          }
-
-          const tooltipContent = `
-            <div class="tooltipContentCss" style="background:#3490dc;color:#fff;padding:8px 18px;border-radius:8px;font-size:15px;box-shadow:0 2px 8px rgba(52,144,220,0.18);white-space:nowrap;">
-              ${address}<br/>
-              세대수 : ${tnohsh}
-            </div>
-          `;
-          tooltipOverlay = new window.kakao.maps.CustomOverlay({
-            position,
-            content: tooltipContent,
-            yAnchor: 1.2,
-            zIndex: 30,
-          });
-          tooltipOverlay.setMap(mapInstance.current);
-        };
-
+    const tooltipContent = `
+      <div class="tooltipContentCss" style="background:#3490dc;color:#fff;padding:8px 18px;border-radius:8px;font-size:15px;box-shadow:0 2px 8px rgba(52,144,220,0.18);white-space:nowrap;">
+        ${address}<br/>
+        세대수 : ${tnohsh}
+      </div>
+    `;
+    tooltipOverlay = new window.kakao.maps.CustomOverlay({
+      position,
+      content: tooltipContent,
+      yAnchor: 1.2,
+      zIndex: 30,
+    });
+    tooltipOverlay.setMap(mapInstance.current);
+  }
+};
         overlayContent.onmouseout = () => {
           if (tooltipOverlay) {
             tooltipOverlay.setMap(null);
@@ -539,7 +645,7 @@ const KakaoMap = () => {
             width: 100% !important;
             min-width: 0 !important;
             height: auto !important;
-            max-height: 50vh !important; /* 추가: 모바일에서 최대 높이 제한 */
+            max-height: 20vh !important; /* 추가: 모바일에서 최대 높이 제한 */
             border-radius: 0 0 12px 12px !important;
             box-shadow: none !important;
             padding: 16px 8px !important;
@@ -552,7 +658,7 @@ const KakaoMap = () => {
             border-radius: 12px 12px 0 0 !important;
           }
           .kakaomap-result-list {
-            max-height: 30vh !important; /* 추가: 검색 결과 리스트 스크롤 */
+            max-height: 20vh !important; /* 추가: 검색 결과 리스트 스크롤 */
             overflow-y: auto !important;
           }
         }
@@ -652,7 +758,7 @@ const KakaoMap = () => {
             </button>
           </div>
           {/* 최근 검색어 리스트 */}
-          {recentAddresses.length > 0 && (
+          {!isMobile && recentAddresses.length > 0 && (
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#3490dc', fontSize: '15px' }}>최근 검색어</div>
               <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: 0, margin: 0, listStyle: 'none' }}>
@@ -671,7 +777,22 @@ const KakaoMap = () => {
                       onClick={() => handleRecentClick(word)}
                     >
                       {word}
-                    </button>
+                    </button> 
+                    <button
+                      style={{
+                        background: '#efefef',
+                        border: 'none',
+                        borderRadius: '6px',
+                        margin: '0px 2px',
+                        fontSize: '14px',
+                        color: '#3490dc',
+                        cursor: 'pointer',
+                        height: '24px'
+                      }}
+                    onClick={(e) => removeRecentAddress(word, e)} 
+                  >
+                    ×
+                  </button>
                   </li>
                 ))}
               </ul>
@@ -765,7 +886,8 @@ function formatKoreanPrice(price) {
     if (unitCount > 0) {
       if (unit.value >= 10) {
         // 1십 대신 십으로 표기하는 처리 (선택 사항)
-        result += (unitCount > 1 ? unitCount : '') + unit.label;
+        // result += (unitCount > 1 ? unitCount : '') + unit.label;
+        result += unitCount + unit.label;
       } else {
         result += unitCount + unit.label;
       }
@@ -775,3 +897,164 @@ function formatKoreanPrice(price) {
 
   return result;
 }
+
+/**
+ * 실거래가 추이 차트 생성 함수
+ * @param {Array} items - 실거래 데이터 아이템 배열
+ * @param {string} aptcd - 아파트 코드
+ */
+const createPriceChart = (items, aptcd) => {
+  try {
+    const canvas = document.getElementById(`priceChart-${aptcd}`);
+    if (!canvas) return;
+    
+    // 월별 데이터 정리
+    const monthlyData = {};
+    const areaGroups = {};
+    
+    // 데이터 그룹화
+    items.forEach(item => {
+      const year = item.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+      const month = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+      const price = parseFloat(item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '0');
+      const area = parseFloat(item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '0').toFixed(0);
+      
+      if (!year || !month || !price || !area) return;
+      
+      const monthKey = `${year}-${month}`;
+      
+      // 면적별 그룹 생성
+      if (!areaGroups[area]) {
+        areaGroups[area] = {
+          label: `${area}㎡`,
+          data: {},
+          borderColor: getRandomColor(area),
+          backgroundColor: getRandomColor(area, 0.2),
+          tension: 0.4
+        };
+      }
+      
+      // 해당 월에 해당 면적의 거래가 있으면 평균 계산
+      if (!areaGroups[area].data[monthKey]) {
+        areaGroups[area].data[monthKey] = {
+          sum: price,
+          count: 1
+        };
+      } else {
+        areaGroups[area].data[monthKey].sum += price;
+        areaGroups[area].data[monthKey].count += 1;
+      }
+    });
+    
+    // 모든 월 목록 생성 (1년치)
+    const allMonths = [];
+    // 현재 표시 중인 연도 가져오기 (캔버스 ID에서 추출)
+    const yearDisplay = document.querySelector('.apt-info-overlay div > div > span');
+    const currentYear = yearDisplay ? parseInt(yearDisplay.textContent.replace(/[^0-9]/g, '')) : new Date().getFullYear();
+    
+    for (let i = 1; i <= 12; i++) {
+      const monthStr = String(i).padStart(2, '0');
+      allMonths.push(`${currentYear}-${monthStr}`);
+    }
+    
+    // 차트 데이터셋 생성
+    const datasets = [];
+    
+    Object.values(areaGroups).forEach(group => {
+      const dataPoints = allMonths.map(month => {
+        if (group.data[month]) {
+          return Math.round(group.data[month].sum / group.data[month].count);
+        }
+        return null; // 데이터 없는 월은 null로 표시
+      });
+      
+      datasets.push({
+        label: group.label,
+        data: dataPoints,
+        borderColor: group.borderColor,
+        backgroundColor: group.backgroundColor,
+        tension: group.tension,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      });
+    });
+    
+    // 기존 차트 제거
+    if (window.aptPriceCharts && window.aptPriceCharts[aptcd]) {
+      window.aptPriceCharts[aptcd].destroy();
+    }
+    
+    // 차트 객체 저장을 위한 전역 변수
+    if (!window.aptPriceCharts) {
+      window.aptPriceCharts = {};
+    }
+    
+    // 차트 생성
+    window.aptPriceCharts[aptcd] = new window.Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: allMonths.map(m => {
+          const [y, mm] = m.split('-');
+          return `${mm}월`;
+        }),
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                let label = context.dataset.label || '';
+                if (label) {
+                  label += ': ';
+                }
+                if (context.parsed.y !== null) {
+                  label += formatKoreanPrice(context.parsed.y.toString());
+                }
+                return label;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            ticks: {
+              callback: function(value) {
+                return formatKoreanPrice(value.toString());
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('차트 생성 중 오류 발생:', error);
+  }
+};
+
+/**
+ * 면적에 따른 랜덤 색상 생성 함수
+ * @param {string} area - 면적 값
+ * @param {number} alpha - 투명도 (기본값: 1)
+ * @returns {string} - 색상 코드
+ */
+const getRandomColor = (area, alpha = 1) => {
+  // 면적별로 일관된 색상을 위해 면적값을 시드로 사용
+  const seed = parseInt(area) || 0;
+  const r = (seed * 123) % 255;
+  const g = (seed * 45) % 255;
+  const b = (seed * 67) % 255;
+  
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};

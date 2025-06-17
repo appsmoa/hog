@@ -21,6 +21,22 @@ const KakaoMap = () => {
   const infoOverlayRef = useRef(null);
   const navigate = useNavigate();
   const myLocationMarkerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 모바일 기기 감지
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(mobile);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   // 최근 검색어 로드
   useEffect(() => {
@@ -40,6 +56,7 @@ const KakaoMap = () => {
       return limited;
     });
   }, []);
+
 
   const initMap = useCallback((searchWord) => {
     const keyword = typeof searchWord === 'string' ? searchWord : address;
@@ -556,7 +573,7 @@ const KakaoMap = () => {
             width: 100% !important;
             min-width: 0 !important;
             height: auto !important;
-            max-height: 28vh !important; /* 추가: 모바일에서 최대 높이 제한 */
+            max-height: 20vh !important; /* 추가: 모바일에서 최대 높이 제한 */
             border-radius: 0 0 12px 12px !important;
             box-shadow: none !important;
             padding: 16px 8px !important;
@@ -669,7 +686,7 @@ const KakaoMap = () => {
             </button>
           </div>
           {/* 최근 검색어 리스트 */}
-          {recentAddresses.length > 0 && (
+          {!isMobile && recentAddresses.length > 0 && (
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#3490dc', fontSize: '15px' }}>최근 검색어</div>
               <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: 0, margin: 0, listStyle: 'none' }}>
@@ -688,7 +705,8 @@ const KakaoMap = () => {
                       onClick={() => handleRecentClick(word)}
                     >
                       {word}
-                    </button>
+                    </button> 
+                   
                   </li>
                 ))}
               </ul>
@@ -792,3 +810,4 @@ function formatKoreanPrice(price) {
 
   return result;
 }
+

@@ -21,6 +21,22 @@ const KakaoMap = () => {
   const infoOverlayRef = useRef(null);
   const navigate = useNavigate();
   const myLocationMarkerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 모바일 기기 감지
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      setIsMobile(mobile);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+    };
+  }, []);
 
   // 최근 검색어 로드
   useEffect(() => {
@@ -38,6 +54,20 @@ const KakaoMap = () => {
       const limited = arr.slice(0, 10); // 최대 10개
       localStorage.setItem(RECENT_KEY, JSON.stringify(limited));
       return limited;
+    });
+  }, []);
+
+  
+
+  // 검색어 삭제 함수
+  const removeRecentAddress = useCallback((keyword, e) => {
+    // 이벤트 전파 방지 (부모 요소의 클릭 이벤트가 발생하지 않도록)
+    e.stopPropagation();
+    
+    setRecentAddresses(prev => {
+      const filtered = prev.filter(v => v !== keyword);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(filtered));
+      return filtered;
     });
   }, []);
 
@@ -234,6 +264,7 @@ const KakaoMap = () => {
 				      <tr>
 				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">거래일</th>
 				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">전용면적</th>
+                <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">동</th>
 				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">층</th>
 				        <th style="color:#3490dc;padding:8px 4px;border-bottom:2px solid #e2e8f0;">거래가(만원)</th>
 				      </tr>
@@ -244,13 +275,15 @@ const KakaoMap = () => {
 				        const m = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim() || '-';
 				        const d = item.getElementsByTagName("dealDay")[0]?.textContent?.trim() || '-';
 				        const area = item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '-';
+                const aptDong = item.getElementsByTagName("aptDong")[0]?.textContent?.trim() || '-';
 				        const floor = item.getElementsByTagName("floor")[0]?.textContent?.trim() || '-';
 				        const price = item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '-';
 				        const ymd = (y !== '-' && m !== '-' && d !== '-') ? `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}` : '-';
 				        const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
 				        return `<tr style="background-color:${rowBg};transition:background-color 0.2s;" onmouseover="this.style.backgroundColor='#edf2f7'" onmouseout="this.style.backgroundColor='${rowBg}'">
 				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${ymd}</td>
-				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${area !== '-' ? parseFloat(area).toFixed(1) : '-'}㎡ / ${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
+				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${area !== '-' ? parseFloat(area).toFixed(1) : '-'}㎡/${(parseFloat(area)*0.3025*1.3).toFixed(1)}평</td>
+                  <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${aptDong}</td>
 				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;">${floor}</td>
 				          <td align="center" style="padding:10px 4px;border-bottom:1px solid #e2e8f0;font-weight:bold;color:#e53e3e;">${price !== '-' ? formatKoreanPrice(price) : '-'}</td>
 				        </tr>`;
@@ -301,6 +334,9 @@ const KakaoMap = () => {
 			        <span>${year}년 실거래가</span>
 			        <button onclick="event.preventDefault(); window.changeAptDealYear('${apart.aptcd}','${guCode}','${year}',1)" style="background:none;border:none;font-size:18px;cursor:pointer;color:#3490dc;padding:0 6px;">&#8594;</button>
 			      </div>
+			      <div style="margin-bottom:16px;">
+			        <canvas id="priceChart-${apart.aptcd}" width="400" height="200"></canvas>
+			      </div>
 			      ${tradeInfoHtml}
 			    </div>
 			    <button onclick="window.closeAptInfoOverlay()" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:20px;cursor:pointer;color:#3490dc;">×</button>
@@ -309,6 +345,17 @@ const KakaoMap = () => {
 			// 오버레이 내용 업데이트
 			if (infoOverlayRef.current) {
 			  infoOverlayRef.current.setContent(finalContent);
+			  
+			  // Chart.js 스크립트가 로드되어 있는지 확인
+			  if (!window.Chart) {
+			    const script = document.createElement('script');
+			    script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+			    script.onload = () => createPriceChart(sorted, apart.aptcd);
+			    document.head.appendChild(script);
+			  } else {
+			    // 이미 로드되어 있다면 바로 차트 생성
+			    setTimeout(() => createPriceChart(sorted, apart.aptcd), 100);
+			  }
 			}
 
 			/**
@@ -320,7 +367,29 @@ const KakaoMap = () => {
 			 */
 			window.changeAptDealYear = async (aptcd, guCode, baseYear, diff) => {
 			  try {
+				// 연도 계산
 				const newYear = parseInt(baseYear) + diff;
+				
+				// 오버레이 내용 업데이트 (로딩 표시)
+				const loadingContent = document.querySelector('.apt-info-overlay');
+				if (loadingContent) {
+				  const yearDisplay = loadingContent.querySelector('div > div > span');
+				  if (yearDisplay) yearDisplay.textContent = `${newYear}년 실거래가`;
+				  
+				  // 이전/다음 버튼 업데이트
+				  const prevButton = loadingContent.querySelector('div > div > button:first-child');
+				  const nextButton = loadingContent.querySelector('div > div > button:last-child');
+				  if (prevButton) prevButton.onclick = (e) => { e.preventDefault(); window.changeAptDealYear(aptcd, guCode, newYear, -1); };
+				  if (nextButton) nextButton.onclick = (e) => { e.preventDefault(); window.changeAptDealYear(aptcd, guCode, newYear, 1); };
+				  
+				  // 데이터 영역 로딩 표시
+				  const dataArea = loadingContent.querySelector('div > div:last-child');
+				  if (dataArea && dataArea !== yearDisplay?.parentNode) {
+					dataArea.innerHTML = '<div style="color:#888;font-size:14px;text-align:center;padding:20px;">1년치 데이터 로드 중...</div>';
+				  }
+				}
+				
+				// 해당 아파트 정보 다시 불러오기 (새 연도로)
 				await window[`showAptInfo_${aptcd}`](`${newYear}01`);
 			  } catch (error) {
 				console.error('연도 이동 중 오류 발생:', error);
@@ -556,7 +625,7 @@ const KakaoMap = () => {
             width: 100% !important;
             min-width: 0 !important;
             height: auto !important;
-            max-height: 28vh !important; /* 추가: 모바일에서 최대 높이 제한 */
+            max-height: 20vh !important; /* 추가: 모바일에서 최대 높이 제한 */
             border-radius: 0 0 12px 12px !important;
             box-shadow: none !important;
             padding: 16px 8px !important;
@@ -669,7 +738,7 @@ const KakaoMap = () => {
             </button>
           </div>
           {/* 최근 검색어 리스트 */}
-          {recentAddresses.length > 0 && (
+          {!isMobile && recentAddresses.length > 0 && (
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#3490dc', fontSize: '15px' }}>최근 검색어</div>
               <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: 0, margin: 0, listStyle: 'none' }}>
@@ -688,7 +757,22 @@ const KakaoMap = () => {
                       onClick={() => handleRecentClick(word)}
                     >
                       {word}
-                    </button>
+                    </button> 
+                    <button
+                      style={{
+                        background: '#efefef',
+                        border: 'none',
+                        borderRadius: '6px',
+                        margin: '0px 2px',
+                        fontSize: '14px',
+                        color: '#3490dc',
+                        cursor: 'pointer',
+                        height: '24px'
+                      }}
+                    onClick={(e) => removeRecentAddress(word, e)} 
+                  >
+                    ×
+                  </button>
                   </li>
                 ))}
               </ul>
@@ -782,7 +866,8 @@ function formatKoreanPrice(price) {
     if (unitCount > 0) {
       if (unit.value >= 10) {
         // 1십 대신 십으로 표기하는 처리 (선택 사항)
-        result += (unitCount > 1 ? unitCount : '') + unit.label;
+        // result += (unitCount > 1 ? unitCount : '') + unit.label;
+        result += unitCount + unit.label;
       } else {
         result += unitCount + unit.label;
       }
@@ -792,3 +877,164 @@ function formatKoreanPrice(price) {
 
   return result;
 }
+
+/**
+ * 실거래가 추이 차트 생성 함수
+ * @param {Array} items - 실거래 데이터 아이템 배열
+ * @param {string} aptcd - 아파트 코드
+ */
+const createPriceChart = (items, aptcd) => {
+  try {
+    const canvas = document.getElementById(`priceChart-${aptcd}`);
+    if (!canvas) return;
+    
+    // 월별 데이터 정리
+    const monthlyData = {};
+    const areaGroups = {};
+    
+    // 데이터 그룹화
+    items.forEach(item => {
+      const year = item.getElementsByTagName("dealYear")[0]?.textContent?.trim() || '';
+      const month = item.getElementsByTagName("dealMonth")[0]?.textContent?.trim().padStart(2, '0') || '';
+      const price = parseFloat(item.getElementsByTagName("dealAmount")[0]?.textContent?.replace(/,/g, '').trim() || '0');
+      const area = parseFloat(item.getElementsByTagName("excluUseAr")[0]?.textContent?.trim() || '0').toFixed(0);
+      
+      if (!year || !month || !price || !area) return;
+      
+      const monthKey = `${year}-${month}`;
+      
+      // 면적별 그룹 생성
+      if (!areaGroups[area]) {
+        areaGroups[area] = {
+          label: `${area}㎡`,
+          data: {},
+          borderColor: getRandomColor(area),
+          backgroundColor: getRandomColor(area, 0.2),
+          tension: 0.4
+        };
+      }
+      
+      // 해당 월에 해당 면적의 거래가 있으면 평균 계산
+      if (!areaGroups[area].data[monthKey]) {
+        areaGroups[area].data[monthKey] = {
+          sum: price,
+          count: 1
+        };
+      } else {
+        areaGroups[area].data[monthKey].sum += price;
+        areaGroups[area].data[monthKey].count += 1;
+      }
+    });
+    
+    // 모든 월 목록 생성 (1년치)
+    const allMonths = [];
+    // 현재 표시 중인 연도 가져오기 (캔버스 ID에서 추출)
+    const yearDisplay = document.querySelector('.apt-info-overlay div > div > span');
+    const currentYear = yearDisplay ? parseInt(yearDisplay.textContent.replace(/[^0-9]/g, '')) : new Date().getFullYear();
+    
+    for (let i = 1; i <= 12; i++) {
+      const monthStr = String(i).padStart(2, '0');
+      allMonths.push(`${currentYear}-${monthStr}`);
+    }
+    
+    // 차트 데이터셋 생성
+    const datasets = [];
+    
+    Object.values(areaGroups).forEach(group => {
+      const dataPoints = allMonths.map(month => {
+        if (group.data[month]) {
+          return Math.round(group.data[month].sum / group.data[month].count);
+        }
+        return null; // 데이터 없는 월은 null로 표시
+      });
+      
+      datasets.push({
+        label: group.label,
+        data: dataPoints,
+        borderColor: group.borderColor,
+        backgroundColor: group.backgroundColor,
+        tension: group.tension,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      });
+    });
+    
+    // 기존 차트 제거
+    if (window.aptPriceCharts && window.aptPriceCharts[aptcd]) {
+      window.aptPriceCharts[aptcd].destroy();
+    }
+    
+    // 차트 객체 저장을 위한 전역 변수
+    if (!window.aptPriceCharts) {
+      window.aptPriceCharts = {};
+    }
+    
+    // 차트 생성
+    window.aptPriceCharts[aptcd] = new window.Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: allMonths.map(m => {
+          const [y, mm] = m.split('-');
+          return `${mm}월`;
+        }),
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                let label = context.dataset.label || '';
+                if (label) {
+                  label += ': ';
+                }
+                if (context.parsed.y !== null) {
+                  label += formatKoreanPrice(context.parsed.y.toString());
+                }
+                return label;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            ticks: {
+              callback: function(value) {
+                return formatKoreanPrice(value.toString());
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('차트 생성 중 오류 발생:', error);
+  }
+};
+
+/**
+ * 면적에 따른 랜덤 색상 생성 함수
+ * @param {string} area - 면적 값
+ * @param {number} alpha - 투명도 (기본값: 1)
+ * @returns {string} - 색상 코드
+ */
+const getRandomColor = (area, alpha = 1) => {
+  // 면적별로 일관된 색상을 위해 면적값을 시드로 사용
+  const seed = parseInt(area) || 0;
+  const r = (seed * 123) % 255;
+  const g = (seed * 45) % 255;
+  const b = (seed * 67) % 255;
+  
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
