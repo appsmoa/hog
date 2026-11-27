@@ -4,6 +4,20 @@ import { apartments } from '../data/apartments';
 
 const RECENT_KEY = 'recent_addresses';
 
+// 공공데이터포털(apis.data.go.kr) 인증키는 .env의 REACT_APP_DATA_GO_KR_SERVICE_KEY로 주입합니다.
+// 값은 공공데이터포털에서 발급받은 "일반 인증키(Encoding)" 문자열을 그대로 넣습니다.
+const DATA_GO_KR_SERVICE_KEY = process.env.REACT_APP_DATA_GO_KR_SERVICE_KEY;
+
+if (!DATA_GO_KR_SERVICE_KEY) {
+  console.warn(
+    'REACT_APP_DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다. .env.example을 참고해 .env를 만들어 주세요.'
+  );
+}
+
+// 아파트 기본 정보 조회 URL (serviceKey는 이미 URL 인코딩된 값을 그대로 사용)
+const getAptBasisInfoUrl = (kaptCode) =>
+  `https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=${DATA_GO_KR_SERVICE_KEY}&kaptCode=${kaptCode}`;
+
 const KakaoMap = () => {
   const [address, setAddress] = useState('');
   const [recentAddresses, setRecentAddresses] = useState([]);
@@ -69,7 +83,7 @@ const KakaoMap = () => {
 
         window[`showAptInfo_${apart.aptcd}`] = async () => {
           try {
-            const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+            const res = await fetch(getAptBasisInfoUrl(apart.aptcd));
             if (!res.ok) throw new Error('정보를 불러올 수 없습니다.');
             const data = await res.json();
             const item = data.response?.body?.item;
@@ -165,7 +179,7 @@ const KakaoMap = () => {
           let tnohsh = apart.tnohsh;
           if (!address || !tnohsh) {
             try {
-              const res = await fetch(`https://apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3?serviceKey=afU4m%2B7JcibSN7X1GwOWD0ngqwoVtvLMDdTHOwvlUqU6xGT%2BW%2BaGSWk008eVs0xRCLCJp7ksdbvk4qzOEwfMPQ%3D%3D&kaptCode=${apart.aptcd}`);
+              const res = await fetch(getAptBasisInfoUrl(apart.aptcd));
               if (!res.ok) throw new Error();
               const data = await res.json();
               const item = data.response?.body?.item;

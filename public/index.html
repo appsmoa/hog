@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;" />
     <title>부동산 정보</title>
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=5b8614241db87f0a963f91c749315f2c&libraries=services&autoload=false"></script>
+    <!-- appkey는 빌드 시점에 .env의 REACT_APP_KAKAO_MAP_API_KEY 값으로 치환됩니다. -->
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=%REACT_APP_KAKAO_MAP_API_KEY%&libraries=services&autoload=false"></script>
   </head>
   <body>
     <div id="root"></div>
